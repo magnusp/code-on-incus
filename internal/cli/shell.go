@@ -795,6 +795,9 @@ func startNFTMonitoringDaemon(containerName string, cfg *config.Config, daemon *
 			// Critical actions (pause/kill) should notify the user
 			fmt.Fprintf(os.Stderr, "\n\n*** SECURITY: %s ***\n\n", message)
 		},
+		OnError: func(err error) {
+			// Errors are logged to audit file - no terminal output to avoid corrupting TUI
+		},
 	}
 
 	// Start daemon

@@ -46,8 +46,8 @@ func (lr *LogReader) Start(ctx context.Context) error {
 	// Start journal streaming in background
 	go func() {
 		if err := lr.journal.StreamLogs(ctx, lr.journalChan); err != nil {
-			if ctx.Err() == nil {
-				fmt.Printf("Journal streaming error: %v\n", err)
+			if ctx.Err() == nil && lr.config.OnError != nil {
+				lr.config.OnError(fmt.Errorf("journal streaming error: %w", err))
 			}
 		}
 	}()
