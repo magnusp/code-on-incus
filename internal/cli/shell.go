@@ -277,14 +277,14 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	// Start monitoring daemons if enabled (via config or --monitor flag)
 	var monitorDaemon *monitor.Daemon
 	var nftDaemon *nftmonitor.Daemon
-	monitoringEnabled := cfg.Monitoring.Enabled || enableMonitoring
+	monitoringEnabled := config.BoolVal(cfg.Monitoring.Enabled) || enableMonitoring
 	if monitoringEnabled {
 		// Override config settings when --monitor flag is used
 		if enableMonitoring {
-			cfg.Monitoring.Enabled = true
-			cfg.Monitoring.AutoKillOnCritical = true
-			cfg.Monitoring.AutoPauseOnHigh = true
-			cfg.Monitoring.NFT.Enabled = true // Also enable NFT network monitoring
+			cfg.Monitoring.Enabled = ptrBool(true)
+			cfg.Monitoring.AutoKillOnCritical = ptrBool(true)
+			cfg.Monitoring.AutoPauseOnHigh = ptrBool(true)
+			cfg.Monitoring.NFT.Enabled = ptrBool(true) // Also enable NFT network monitoring
 		}
 		// Start traditional monitoring (process/filesystem)
 		if err := startMonitoringDaemon(result.ContainerName, absWorkspace, cfg, &monitorDaemon); err != nil {
@@ -293,7 +293,7 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		}
 
 		// Start nftables monitoring (network only)
-		if cfg.Monitoring.NFT.Enabled {
+		if config.BoolVal(cfg.Monitoring.NFT.Enabled) {
 			if err := startNFTMonitoringDaemon(result.ContainerName, cfg, &nftDaemon); err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to start NFT monitoring: %v\n", err)
 				// Don't fail the session if NFT monitoring fails
@@ -411,6 +411,11 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	return err
+}
+
+// ptrBool returns a pointer to a bool value
+func ptrBool(b bool) *bool {
+	return &b
 }
 
 // getEnvValue checks for an env var in --env flags first, then os.Getenv
@@ -719,8 +724,8 @@ func startMonitoringDaemon(containerName, workspacePath string, cfg *config.Conf
 		AllowedDomains:       cfg.Network.AllowedDomains,
 		FileReadThresholdMB:  cfg.Monitoring.FileReadThresholdMB,
 		FileReadRateMBPerSec: cfg.Monitoring.FileReadRateMBPerSec,
-		AutoPauseOnHigh:      cfg.Monitoring.AutoPauseOnHigh,
-		AutoKillOnCritical:   cfg.Monitoring.AutoKillOnCritical,
+		AutoPauseOnHigh:      config.BoolVal(cfg.Monitoring.AutoPauseOnHigh),
+		AutoKillOnCritical:   config.BoolVal(cfg.Monitoring.AutoKillOnCritical),
 		OnThreat: func(threat monitor.ThreatEvent) {
 			// Threats are logged to audit file - no terminal output to avoid corrupting TUI
 		},
@@ -781,7 +786,7 @@ func startNFTMonitoringDaemon(containerName string, cfg *config.Config, daemon *
 		AuditLogPath:       auditLogPath,
 		RateLimitPerSecond: cfg.Monitoring.NFT.RateLimitPerSecond,
 		DNSQueryThreshold:  cfg.Monitoring.NFT.DNSQueryThreshold,
-		LogDNSQueries:      cfg.Monitoring.NFT.LogDNSQueries,
+		LogDNSQueries:      config.BoolVal(cfg.Monitoring.NFT.LogDNSQueries),
 		LimaHost:           cfg.Monitoring.NFT.LimaHost,
 		OnThreat: func(threat nftmonitor.ThreatEvent) {
 			// Threats are logged to audit file - no terminal output to avoid corrupting TUI

@@ -415,8 +415,8 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 			result.TimeoutMonitor = limits.NewTimeoutMonitor(
 				result.ContainerName,
 				duration,
-				opts.LimitsConfig.Runtime.AutoStop,
-				opts.LimitsConfig.Runtime.StopGraceful,
+				config.BoolVal(opts.LimitsConfig.Runtime.AutoStop),
+				config.BoolVal(opts.LimitsConfig.Runtime.StopGraceful),
 				opts.IncusProject,
 				opts.Logger,
 			)

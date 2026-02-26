@@ -116,7 +116,7 @@ func TestGetProfile(t *testing.T) {
 	// Add a test profile
 	cfg.Profiles["test"] = ProfileConfig{
 		Image:      "test-image",
-		Persistent: true,
+		Persistent: ptrBool(true),
 	}
 
 	// Test getting existing profile
@@ -143,7 +143,7 @@ func TestApplyProfile(t *testing.T) {
 	// Add a test profile
 	cfg.Profiles["rust"] = ProfileConfig{
 		Image:      "rust-image",
-		Persistent: true,
+		Persistent: ptrBool(true),
 	}
 
 	// Apply the profile
@@ -157,7 +157,7 @@ func TestApplyProfile(t *testing.T) {
 		t.Errorf("Expected image 'rust-image', got '%s'", cfg.Defaults.Image)
 	}
 
-	if !cfg.Defaults.Persistent {
+	if cfg.Defaults.Persistent == nil || !*cfg.Defaults.Persistent {
 		t.Error("Expected persistent to be true")
 	}
 
@@ -464,6 +464,83 @@ func TestClaudeEffortLevelMerge(t *testing.T) {
 				t.Errorf("Expected effort level '%s', got '%s'", tt.expectedLevel, base.Tool.Claude.EffortLevel)
 			}
 		})
+	}
+}
+
+func TestMergeBoolZeroValueBug(t *testing.T) {
+	// This test demonstrates a bug where merging a zero-value Config (simulating
+	// a TOML file that only sets string fields) overwrites security-critical
+	// boolean defaults with false. For example, a user config at
+	// ~/.config/coi/config.toml that only sets image = "my-image" should NOT
+	// reset block_private_networks from true to false.
+
+	base := GetDefaultConfig()
+
+	// Verify defaults are set correctly before merge
+	if base.Network.BlockPrivateNetworks == nil || !*base.Network.BlockPrivateNetworks {
+		t.Fatal("Expected default BlockPrivateNetworks to be true")
+	}
+	if base.Network.BlockMetadataEndpoint == nil || !*base.Network.BlockMetadataEndpoint {
+		t.Fatal("Expected default BlockMetadataEndpoint to be true")
+	}
+	if base.Monitoring.AutoPauseOnHigh == nil || !*base.Monitoring.AutoPauseOnHigh {
+		t.Fatal("Expected default AutoPauseOnHigh to be true")
+	}
+	if base.Monitoring.AutoKillOnCritical == nil || !*base.Monitoring.AutoKillOnCritical {
+		t.Fatal("Expected default AutoKillOnCritical to be true")
+	}
+	if base.Limits.Runtime.AutoStop == nil || !*base.Limits.Runtime.AutoStop {
+		t.Fatal("Expected default AutoStop to be true")
+	}
+	if base.Limits.Runtime.StopGraceful == nil || !*base.Limits.Runtime.StopGraceful {
+		t.Fatal("Expected default StopGraceful to be true")
+	}
+	if base.Network.Logging.Enabled == nil || !*base.Network.Logging.Enabled {
+		t.Fatal("Expected default NetworkLogging.Enabled to be true")
+	}
+	if base.Monitoring.NFT.LogDNSQueries == nil || !*base.Monitoring.NFT.LogDNSQueries {
+		t.Fatal("Expected default NFT.LogDNSQueries to be true")
+	}
+
+	// Create a zero-value config, simulating a TOML file that only sets
+	// image = "my-image" (all booleans remain nil / zero-value).
+	other := &Config{
+		Defaults: DefaultsConfig{
+			Image: "my-image",
+		},
+	}
+
+	base.Merge(other)
+
+	// After merge, all security-critical bool defaults must survive.
+	if base.Network.BlockPrivateNetworks == nil || !*base.Network.BlockPrivateNetworks {
+		t.Error("BlockPrivateNetworks was silently reset to false by merge")
+	}
+	if base.Network.BlockMetadataEndpoint == nil || !*base.Network.BlockMetadataEndpoint {
+		t.Error("BlockMetadataEndpoint was silently reset to false by merge")
+	}
+	if base.Monitoring.AutoPauseOnHigh == nil || !*base.Monitoring.AutoPauseOnHigh {
+		t.Error("AutoPauseOnHigh was silently reset to false by merge")
+	}
+	if base.Monitoring.AutoKillOnCritical == nil || !*base.Monitoring.AutoKillOnCritical {
+		t.Error("AutoKillOnCritical was silently reset to false by merge")
+	}
+	if base.Limits.Runtime.AutoStop == nil || !*base.Limits.Runtime.AutoStop {
+		t.Error("AutoStop was silently reset to false by merge")
+	}
+	if base.Limits.Runtime.StopGraceful == nil || !*base.Limits.Runtime.StopGraceful {
+		t.Error("StopGraceful was silently reset to false by merge")
+	}
+	if base.Network.Logging.Enabled == nil || !*base.Network.Logging.Enabled {
+		t.Error("NetworkLogging.Enabled was silently reset to false by merge")
+	}
+	if base.Monitoring.NFT.LogDNSQueries == nil || !*base.Monitoring.NFT.LogDNSQueries {
+		t.Error("NFT.LogDNSQueries was silently reset to false by merge")
+	}
+
+	// Verify the image WAS overridden (merge still works for string fields).
+	if base.Defaults.Image != "my-image" {
+		t.Errorf("Expected image 'my-image', got '%s'", base.Defaults.Image)
 	}
 }
 

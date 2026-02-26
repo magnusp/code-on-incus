@@ -185,10 +185,11 @@ func TestRestrictedModeFirewallCleanup(t *testing.T) {
 	time.Sleep(3 * time.Second)
 
 	// Set up network manager with restricted mode
+	boolTrue := true
 	netCfg := &config.NetworkConfig{
 		Mode:                  config.NetworkModeRestricted,
-		BlockPrivateNetworks:  true,
-		BlockMetadataEndpoint: true,
+		BlockPrivateNetworks:  &boolTrue,
+		BlockMetadataEndpoint: &boolTrue,
 	}
 	netMgr := NewManager(netCfg)
 
@@ -286,10 +287,11 @@ func TestFirewallCleanupBeforeContainerDeletion(t *testing.T) {
 	t.Logf("Container IP: %s", containerIP)
 
 	// Set up network manager with restricted mode
+	boolTrue := true
 	netCfg := &config.NetworkConfig{
 		Mode:                  config.NetworkModeRestricted,
-		BlockPrivateNetworks:  true,
-		BlockMetadataEndpoint: true,
+		BlockPrivateNetworks:  &boolTrue,
+		BlockMetadataEndpoint: &boolTrue,
 	}
 	netMgr := NewManager(netCfg)
 
@@ -391,10 +393,11 @@ func TestFirewallCleanupCorrectOrder(t *testing.T) {
 	t.Logf("Container IP: %s", containerIP)
 
 	// Set up network manager with restricted mode
+	boolTrue := true
 	netCfg := &config.NetworkConfig{
 		Mode:                  config.NetworkModeRestricted,
-		BlockPrivateNetworks:  true,
-		BlockMetadataEndpoint: true,
+		BlockPrivateNetworks:  &boolTrue,
+		BlockMetadataEndpoint: &boolTrue,
 	}
 	netMgr := NewManager(netCfg)
 

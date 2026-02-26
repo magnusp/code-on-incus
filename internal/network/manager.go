@@ -128,10 +128,10 @@ func (m *Manager) setupRestricted(ctx context.Context, containerName string) err
 	log.Printf("Firewall rules applied for container %s", containerName)
 
 	// Log what is blocked
-	if m.config.BlockPrivateNetworks {
+	if config.BoolVal(m.config.BlockPrivateNetworks) {
 		log.Println("  Blocking private networks (RFC1918)")
 	}
-	if m.config.BlockMetadataEndpoint {
+	if config.BoolVal(m.config.BlockMetadataEndpoint) {
 		log.Println("  Blocking cloud metadata endpoints")
 	}
 
