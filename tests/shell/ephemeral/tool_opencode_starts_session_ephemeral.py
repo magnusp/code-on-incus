@@ -1,13 +1,13 @@
 """
 Test that coi shell with [tool] name = "opencode" starts the real opencode binary
-and injects the permission bypass into ~/.opencode.json.
+and injects the permission bypass into ~/.config/opencode/opencode.json.
 
 Verifies that:
 1. Writing [tool] name = "opencode" to .coi.toml is accepted
 2. coi shell starts the container and launches the real opencode binary
 3. Opencode's startup UI appears on screen (provider/login screen)
-4. ~/.opencode.json is created in the container with the permission bypass
-   ({"permission": {"*": "allow"}}) via the ToolWithHomeConfigFile injection path
+4. ~/.config/opencode/opencode.json is created in the container with the permission
+   bypass ({"permission": {"*": "allow"}}) via the ToolWithConfigDirFiles injection path
 
 No API key is required - opencode displays a provider selection screen without one.
 """
@@ -37,7 +37,7 @@ def test_opencode_tool_starts_session(coi_binary, cleanup_containers, workspace_
     2. Start coi shell (no COI_USE_DUMMY - use the real binary)
     3. Wait for container setup to complete
     4. Wait for opencode's startup UI to appear on screen
-    5. While TUI is running, use incus exec to inspect ~/.opencode.json
+    5. While TUI is running, use incus exec to inspect ~/.config/opencode/opencode.json
     6. Ctrl+C to exit the TUI, then poweroff
     """
     config_path = os.path.join(workspace_dir, ".coi.toml")
@@ -64,7 +64,7 @@ def test_opencode_tool_starts_session(coi_binary, cleanup_containers, workspace_
     except Exception:
         pass
 
-    # While TUI is running, inspect ~/.opencode.json via incus exec (separate process)
+    # While TUI is running, inspect ~/.config/opencode/opencode.json via incus exec
     permission_injected = False
     try:
         result = subprocess.run(
@@ -77,7 +77,7 @@ def test_opencode_tool_starts_session(coi_binary, cleanup_containers, workspace_
                 "-c",
                 (
                     "import json; "
-                    "d = json.load(open('/home/code/.opencode.json')); "
+                    "d = json.load(open('/home/code/.config/opencode/opencode.json')); "
                     "print(json.dumps(d.get('permission', {})))"
                 ),
             ],
@@ -124,5 +124,5 @@ def test_opencode_tool_starts_session(coi_binary, cleanup_containers, workspace_
         "and display its startup UI"
     )
     assert permission_injected, (
-        '~/.opencode.json should contain the permission bypass: {"permission": {"*": "allow"}}'
+        '~/.config/opencode/opencode.json should contain the permission bypass: {"permission": {"*": "allow"}}'
     )

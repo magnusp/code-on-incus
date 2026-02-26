@@ -8,6 +8,8 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **opencode global config now uses correct XDG location** - Fixed opencode configuration being placed at `~/.opencode.json` (old format) instead of `~/.config/opencode/opencode.json` (current XDG-standard location). The sandbox permission bypass and user's global config are now correctly injected. Also copies `tui.json` when present. Fixes #158.
+
 - [Bug Fix] **opencode install URL updated** - Fixed the opencode installation script using an outdated GitHub raw URL that installed an old version (v0.0.55). Updated to the official `https://opencode.ai/install` URL per the opencode docs. Fixes #157.
 
 - [Bug Fix] **NFT monitor daemon errors no longer corrupt TUI** - Fixed `nftmonitor.Daemon` using `fmt.Printf` to report errors directly to stdout, which corrupted the terminal UI. Errors from log reader failures and threat handling now route through an `OnError` callback (matching the pattern already used by `monitor.Daemon`). Added `OnError func(error)` to `nftmonitor.Config` and wired it in the CLI. Includes regression tests.

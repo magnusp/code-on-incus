@@ -151,6 +151,14 @@ type ToolWithHomeConfigFile interface {
 	HomeConfigFileName() string
 }
 
+// ToolWithConfigDirFiles is an optional interface for directory-based tools
+// that need custom essential files and sandbox settings target.
+type ToolWithConfigDirFiles interface {
+	Tool
+	EssentialConfigFiles() []string
+	SandboxSettingsFileName() string
+}
+
 // ToolWithEffortLevel is an optional interface for tools that support
 // configurable effort levels (e.g., Claude's low/medium/high effort).
 type ToolWithEffortLevel interface {

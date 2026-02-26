@@ -13,8 +13,8 @@ func TestOpencodeTool_Basics(t *testing.T) {
 	if oc.Binary() != "opencode" {
 		t.Errorf("Binary() = %q, want %q", oc.Binary(), "opencode")
 	}
-	if oc.ConfigDirName() != "" {
-		t.Errorf("ConfigDirName() = %q, want %q", oc.ConfigDirName(), "")
+	if oc.ConfigDirName() != ".config/opencode" {
+		t.Errorf("ConfigDirName() = %q, want %q", oc.ConfigDirName(), ".config/opencode")
 	}
 	if oc.SessionsDirName() != "sessions-opencode" {
 		t.Errorf("SessionsDirName() = %q, want %q", oc.SessionsDirName(), "sessions-opencode")
@@ -76,15 +76,32 @@ func TestOpencodeTool_GetSandboxSettings(t *testing.T) {
 	}
 }
 
-func TestOpencodeTool_HomeConfigFileName(t *testing.T) {
+func TestOpencodeTool_EssentialConfigFiles(t *testing.T) {
 	oc := NewOpencode()
-	// Type-assert to ToolWithHomeConfigFile
-	twh, ok := oc.(ToolWithHomeConfigFile)
+	tcf, ok := oc.(ToolWithConfigDirFiles)
 	if !ok {
-		t.Fatal("OpencodeTool does not implement ToolWithHomeConfigFile")
+		t.Fatal("OpencodeTool does not implement ToolWithConfigDirFiles")
 	}
-	if twh.HomeConfigFileName() != ".opencode.json" {
-		t.Errorf("HomeConfigFileName() = %q, want %q", twh.HomeConfigFileName(), ".opencode.json")
+	files := tcf.EssentialConfigFiles()
+	expected := []string{"opencode.json", "tui.json"}
+	if len(files) != len(expected) {
+		t.Fatalf("EssentialConfigFiles() = %v, want %v", files, expected)
+	}
+	for i, f := range files {
+		if f != expected[i] {
+			t.Errorf("EssentialConfigFiles()[%d] = %q, want %q", i, f, expected[i])
+		}
+	}
+}
+
+func TestOpencodeTool_SandboxSettingsFileName(t *testing.T) {
+	oc := NewOpencode()
+	tcf, ok := oc.(ToolWithConfigDirFiles)
+	if !ok {
+		t.Fatal("OpencodeTool does not implement ToolWithConfigDirFiles")
+	}
+	if tcf.SandboxSettingsFileName() != "opencode.json" {
+		t.Errorf("SandboxSettingsFileName() = %q, want %q", tcf.SandboxSettingsFileName(), "opencode.json")
 	}
 }
 
