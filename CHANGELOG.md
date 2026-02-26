@@ -8,6 +8,8 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **NFT monitor daemon errors no longer corrupt TUI** - Fixed `nftmonitor.Daemon` using `fmt.Printf` to report errors directly to stdout, which corrupted the terminal UI. Errors from log reader failures and threat handling now route through an `OnError` callback (matching the pattern already used by `monitor.Daemon`). Added `OnError func(error)` to `nftmonitor.Config` and wired it in the CLI. Includes regression tests.
+
 - [Bug Fix] **Config merge no longer silently drops boolean settings** - Fixed multi-layer config merge (`/etc/coi/config.toml` → `~/.config/coi/config.toml` → `.coi.toml`) silently overriding boolean fields with `false` when the higher-priority file omitted them. Security-critical defaults like `block_private_networks`, `block_metadata_endpoint`, `auto_pause_on_high`, `auto_kill_on_critical`, and `auto_stop` could all be lost. Converted 13 boolean config fields to pointer types (`*bool`) so `nil` correctly represents "not set in this file", extending the pattern already used by `git.writable_hooks`. Includes regression test.
 
 - [Bug Fix] **Incus config values now applied to command execution** - Fixed `incus.project`, `incus.group`, `incus.code_uid`, and `incus.code_user` config settings being ignored. These values were defined as hardcoded constants in the container package while the config struct had matching fields that were never wired in. The constants are now package-level variables initialized from the loaded config via `container.Configure()`, so custom TOML settings (e.g., `incus.project = "myproject"`) take effect on all Incus command execution.

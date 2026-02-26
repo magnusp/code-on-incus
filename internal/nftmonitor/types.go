@@ -28,6 +28,7 @@ type Config struct {
 	LimaHost           string
 	OnThreat           func(ThreatEvent)
 	OnAction           func(action, message string) // Called when container is paused/killed
+	OnError            func(error)                  // Called on non-fatal errors (avoids stdout corruption)
 }
 
 // ThreatEvent represents a detected network threat

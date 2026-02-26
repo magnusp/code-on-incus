@@ -108,8 +108,8 @@ func (d *Daemon) start() {
 	go func() {
 		defer d.wg.Done()
 		if err := d.logReader.Start(d.ctx); err != nil {
-			if d.ctx.Err() == nil {
-				fmt.Printf("Log reader error: %v\n", err)
+			if d.ctx.Err() == nil && d.config.OnError != nil {
+				d.config.OnError(fmt.Errorf("log reader error: %w", err))
 			}
 		}
 	}()
@@ -157,7 +157,9 @@ func (d *Daemon) processEvents() {
 				// Handle threat (logging, alerting, response)
 				debugf("Calling responder.Handle for threat")
 				if err := d.responder.Handle(d.ctx, monitorThreat); err != nil {
-					fmt.Printf("Error handling threat: %v\n", err)
+					if d.config.OnError != nil {
+						d.config.OnError(fmt.Errorf("error handling threat: %w", err))
+					}
 					debugf("Responder error: %v", err)
 				} else {
 					debugf("Responder.Handle completed successfully")
