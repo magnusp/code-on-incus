@@ -62,7 +62,7 @@ func DefaultProtectedPaths() []string {
 // DefaultsConfig contains default settings
 type DefaultsConfig struct {
 	Image      string `toml:"image"`
-	Persistent bool   `toml:"persistent"`
+	Persistent *bool  `toml:"persistent"`
 	Model      string `toml:"model"`
 }
 
@@ -98,17 +98,17 @@ const (
 // NetworkConfig contains network isolation settings
 type NetworkConfig struct {
 	Mode                    NetworkMode          `toml:"mode"`
-	BlockPrivateNetworks    bool                 `toml:"block_private_networks"`
-	BlockMetadataEndpoint   bool                 `toml:"block_metadata_endpoint"`
+	BlockPrivateNetworks    *bool                `toml:"block_private_networks"`
+	BlockMetadataEndpoint   *bool                `toml:"block_metadata_endpoint"`
 	AllowedDomains          []string             `toml:"allowed_domains"`
 	RefreshIntervalMinutes  int                  `toml:"refresh_interval_minutes"`
-	AllowLocalNetworkAccess bool                 `toml:"allow_local_network_access"` // Allow established connections from entire local network (not just gateway)
+	AllowLocalNetworkAccess *bool                `toml:"allow_local_network_access"` // Allow established connections from entire local network (not just gateway)
 	Logging                 NetworkLoggingConfig `toml:"logging"`
 }
 
 // NetworkLoggingConfig contains network logging settings
 type NetworkLoggingConfig struct {
-	Enabled bool   `toml:"enabled"`
+	Enabled *bool  `toml:"enabled"`
 	Path    string `toml:"path"`
 }
 
@@ -116,7 +116,7 @@ type NetworkLoggingConfig struct {
 type ProfileConfig struct {
 	Image       string            `toml:"image"`
 	Environment map[string]string `toml:"environment"`
-	Persistent  bool              `toml:"persistent"`
+	Persistent  *bool             `toml:"persistent"`
 	Limits      *LimitsConfig     `toml:"limits"`
 }
 
@@ -178,24 +178,24 @@ type DiskLimits struct {
 type RuntimeLimits struct {
 	MaxDuration  string `toml:"max_duration"`  // "2h", "30m", "1h30m", "" (unlimited)
 	MaxProcesses int    `toml:"max_processes"` // 0 = unlimited
-	AutoStop     bool   `toml:"auto_stop"`     // auto-stop when limit reached
-	StopGraceful bool   `toml:"stop_graceful"` // graceful vs force stop
+	AutoStop     *bool  `toml:"auto_stop"`     // auto-stop when limit reached
+	StopGraceful *bool  `toml:"stop_graceful"` // graceful vs force stop
 }
 
 // NFTMonitoringConfig contains nftables-based network monitoring settings
 type NFTMonitoringConfig struct {
-	Enabled            bool   `toml:"enabled"`               // Enable nftables monitoring
+	Enabled            *bool  `toml:"enabled"`               // Enable nftables monitoring
 	RateLimitPerSecond int    `toml:"rate_limit_per_second"` // Limit log volume (default 100)
 	DNSQueryThreshold  int    `toml:"dns_query_threshold"`   // Alert if >N queries/min (default 100)
-	LogDNSQueries      bool   `toml:"log_dns_queries"`       // Separate DNS logging (default true)
+	LogDNSQueries      *bool  `toml:"log_dns_queries"`       // Separate DNS logging (default true)
 	LimaHost           string `toml:"lima_host"`             // Lima host for macOS (e.g., "lima-default")
 }
 
 // MonitoringConfig contains security monitoring settings
 type MonitoringConfig struct {
-	Enabled               bool                `toml:"enabled"`                   // Enable background monitoring
-	AutoPauseOnHigh       bool                `toml:"auto_pause_on_high"`        // Pause container on high-severity threats
-	AutoKillOnCritical    bool                `toml:"auto_kill_on_critical"`     // Kill container on critical threats
+	Enabled               *bool               `toml:"enabled"`                   // Enable background monitoring
+	AutoPauseOnHigh       *bool               `toml:"auto_pause_on_high"`        // Pause container on high-severity threats
+	AutoKillOnCritical    *bool               `toml:"auto_kill_on_critical"`     // Kill container on critical threats
 	PollIntervalSec       int                 `toml:"poll_interval_sec"`         // How often to collect stats
 	FileReadThresholdMB   float64             `toml:"file_read_threshold_mb"`    // MB read in poll interval before alert
 	FileReadRateMBPerSec  float64             `toml:"file_read_rate_mb_per_sec"` // MB/sec sustained rate before alert
@@ -214,7 +214,7 @@ func GetDefaultConfig() *Config {
 	return &Config{
 		Defaults: DefaultsConfig{
 			Image:      "coi",
-			Persistent: false,
+			Persistent: ptrBool(false),
 			Model:      "claude-sonnet-4-5",
 		},
 		Paths: PathsConfig{
@@ -230,8 +230,8 @@ func GetDefaultConfig() *Config {
 		},
 		Network: NetworkConfig{
 			Mode:                  NetworkModeRestricted,
-			BlockPrivateNetworks:  true,
-			BlockMetadataEndpoint: true,
+			BlockPrivateNetworks:  ptrBool(true),
+			BlockMetadataEndpoint: ptrBool(true),
 			AllowedDomains: []string{
 				// Default allowlist for allowlist mode (--network=allowlist)
 				// Note: Gateway IP is auto-detected and added automatically
@@ -242,9 +242,10 @@ func GetDefaultConfig() *Config {
 				"api.anthropic.com",   // Claude API
 				"platform.claude.com", // Claude Platform (OAuth, Console)
 			},
-			RefreshIntervalMinutes: 30,
+			AllowLocalNetworkAccess: ptrBool(false),
+			RefreshIntervalMinutes:  30,
 			Logging: NetworkLoggingConfig{
-				Enabled: true,
+				Enabled: ptrBool(true),
 				Path:    filepath.Join(baseDir, "logs", "network.log"),
 			},
 		},
@@ -284,23 +285,23 @@ func GetDefaultConfig() *Config {
 			Runtime: RuntimeLimits{
 				MaxDuration:  "",
 				MaxProcesses: 0,
-				AutoStop:     true,
-				StopGraceful: true,
+				AutoStop:     ptrBool(true),
+				StopGraceful: ptrBool(true),
 			},
 		},
 		Monitoring: MonitoringConfig{
-			Enabled:               false,
-			AutoPauseOnHigh:       true,
-			AutoKillOnCritical:    true,
+			Enabled:               ptrBool(false),
+			AutoPauseOnHigh:       ptrBool(true),
+			AutoKillOnCritical:    ptrBool(true),
 			PollIntervalSec:       2,
 			FileReadThresholdMB:   50.0,
 			FileReadRateMBPerSec:  10.0,
 			AuditLogRetentionDays: 30,
 			NFT: NFTMonitoringConfig{
-				Enabled:            false,
+				Enabled:            ptrBool(false),
 				RateLimitPerSecond: 100,
 				DNSQueryThreshold:  100,
-				LogDNSQueries:      true,
+				LogDNSQueries:      ptrBool(true),
 				LimaHost:           "", // Empty for native Linux
 			},
 		},
@@ -339,6 +340,14 @@ func ptrBool(b bool) *bool {
 	return &b
 }
 
+// BoolVal safely dereferences a *bool, returning false if nil
+func BoolVal(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
+}
+
 // ExpandPath expands ~ in paths to home directory
 func ExpandPath(path string) string {
 	if len(path) == 0 {
@@ -366,10 +375,9 @@ func (c *Config) Merge(other *Config) {
 	if other.Defaults.Model != "" {
 		c.Defaults.Model = other.Defaults.Model
 	}
-	// For booleans, we need a way to distinguish "not set" from "false"
-	// In TOML, if a field is not present, it will be false (zero value)
-	// This is a limitation - we'll just override if file exists
-	c.Defaults.Persistent = other.Defaults.Persistent
+	if other.Defaults.Persistent != nil {
+		c.Defaults.Persistent = other.Defaults.Persistent
+	}
 
 	// Merge paths
 	if other.Paths.SessionsDir != "" {
@@ -403,11 +411,15 @@ func (c *Config) Merge(other *Config) {
 	if other.Network.Mode != "" {
 		c.Network.Mode = other.Network.Mode
 	}
-	// For booleans, we merge if they appear to be explicitly set
-	// This is imperfect in TOML but works for most cases
-	c.Network.BlockPrivateNetworks = other.Network.BlockPrivateNetworks
-	c.Network.BlockMetadataEndpoint = other.Network.BlockMetadataEndpoint
-	c.Network.AllowLocalNetworkAccess = other.Network.AllowLocalNetworkAccess
+	if other.Network.BlockPrivateNetworks != nil {
+		c.Network.BlockPrivateNetworks = other.Network.BlockPrivateNetworks
+	}
+	if other.Network.BlockMetadataEndpoint != nil {
+		c.Network.BlockMetadataEndpoint = other.Network.BlockMetadataEndpoint
+	}
+	if other.Network.AllowLocalNetworkAccess != nil {
+		c.Network.AllowLocalNetworkAccess = other.Network.AllowLocalNetworkAccess
+	}
 
 	// Merge allowed domains (replace entirely if set)
 	if len(other.Network.AllowedDomains) > 0 {
@@ -422,7 +434,9 @@ func (c *Config) Merge(other *Config) {
 	if other.Network.Logging.Path != "" {
 		c.Network.Logging.Path = ExpandPath(other.Network.Logging.Path)
 	}
-	c.Network.Logging.Enabled = other.Network.Logging.Enabled
+	if other.Network.Logging.Enabled != nil {
+		c.Network.Logging.Enabled = other.Network.Logging.Enabled
+	}
 
 	// Merge Tool settings
 	if other.Tool.Name != "" {
@@ -522,18 +536,25 @@ func mergeLimits(base *LimitsConfig, other *LimitsConfig) {
 	if other.Runtime.MaxProcesses != 0 {
 		base.Runtime.MaxProcesses = other.Runtime.MaxProcesses
 	}
-	// For booleans, we take the other value if it differs from default
-	// This is imperfect but works for most cases
-	base.Runtime.AutoStop = other.Runtime.AutoStop
-	base.Runtime.StopGraceful = other.Runtime.StopGraceful
+	if other.Runtime.AutoStop != nil {
+		base.Runtime.AutoStop = other.Runtime.AutoStop
+	}
+	if other.Runtime.StopGraceful != nil {
+		base.Runtime.StopGraceful = other.Runtime.StopGraceful
+	}
 }
 
 // mergeMonitoring merges monitoring configurations (other takes precedence)
 func mergeMonitoring(base *MonitoringConfig, other *MonitoringConfig) {
-	// For booleans, we take the other value
-	base.Enabled = other.Enabled
-	base.AutoPauseOnHigh = other.AutoPauseOnHigh
-	base.AutoKillOnCritical = other.AutoKillOnCritical
+	if other.Enabled != nil {
+		base.Enabled = other.Enabled
+	}
+	if other.AutoPauseOnHigh != nil {
+		base.AutoPauseOnHigh = other.AutoPauseOnHigh
+	}
+	if other.AutoKillOnCritical != nil {
+		base.AutoKillOnCritical = other.AutoKillOnCritical
+	}
 
 	// Merge thresholds
 	if other.PollIntervalSec != 0 {
@@ -550,14 +571,18 @@ func mergeMonitoring(base *MonitoringConfig, other *MonitoringConfig) {
 	}
 
 	// Merge NFT monitoring
-	base.NFT.Enabled = other.NFT.Enabled
+	if other.NFT.Enabled != nil {
+		base.NFT.Enabled = other.NFT.Enabled
+	}
 	if other.NFT.RateLimitPerSecond != 0 {
 		base.NFT.RateLimitPerSecond = other.NFT.RateLimitPerSecond
 	}
 	if other.NFT.DNSQueryThreshold != 0 {
 		base.NFT.DNSQueryThreshold = other.NFT.DNSQueryThreshold
 	}
-	base.NFT.LogDNSQueries = other.NFT.LogDNSQueries
+	if other.NFT.LogDNSQueries != nil {
+		base.NFT.LogDNSQueries = other.NFT.LogDNSQueries
+	}
 	if other.NFT.LimaHost != "" {
 		base.NFT.LimaHost = other.NFT.LimaHost
 	}
@@ -581,7 +606,9 @@ func (c *Config) ApplyProfile(name string) bool {
 	if profile.Image != "" {
 		c.Defaults.Image = profile.Image
 	}
-	c.Defaults.Persistent = profile.Persistent
+	if profile.Persistent != nil {
+		c.Defaults.Persistent = profile.Persistent
+	}
 
 	// Apply profile limits if present
 	if profile.Limits != nil {

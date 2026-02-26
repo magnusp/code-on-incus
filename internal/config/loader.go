@@ -80,7 +80,7 @@ func loadFromEnv(cfg *Config) {
 
 	// CLAUDE_ON_INCUS_PERSISTENT
 	if env := os.Getenv("CLAUDE_ON_INCUS_PERSISTENT"); env == "true" || env == "1" {
-		cfg.Defaults.Persistent = true
+		cfg.Defaults.Persistent = ptrBool(true)
 	}
 
 	// Limit environment variables (using COI_ prefix for brevity)

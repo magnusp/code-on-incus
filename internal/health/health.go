@@ -87,7 +87,7 @@ func RunAllChecks(cfg *config.Config, verbose bool) *HealthResult {
 	checks["network_restriction"] = CheckNetworkRestriction(cfg.Defaults.Image)
 
 	// NFT monitoring checks (only if enabled in config)
-	if cfg.Monitoring.NFT.Enabled {
+	if config.BoolVal(cfg.Monitoring.NFT.Enabled) {
 		checks["nftables"] = CheckNFTables()
 		checks["systemd_journal"] = CheckSystemdJournal()
 		checks["libsystemd"] = CheckLibsystemd()

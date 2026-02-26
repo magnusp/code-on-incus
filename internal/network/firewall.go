@@ -43,7 +43,7 @@ func (f *FirewallManager) ApplyRestricted(cfg *config.NetworkConfig) error {
 	}
 
 	// Handle local network access
-	if cfg.AllowLocalNetworkAccess {
+	if config.BoolVal(cfg.AllowLocalNetworkAccess) {
 		// Allow all RFC1918 when local network access is enabled
 		if err := f.addRule(1, f.containerIP, "10.0.0.0/8", "ACCEPT"); err != nil {
 			return fmt.Errorf("failed to add RFC1918 allow rule: %w", err)
@@ -54,7 +54,7 @@ func (f *FirewallManager) ApplyRestricted(cfg *config.NetworkConfig) error {
 		if err := f.addRule(1, f.containerIP, "192.168.0.0/16", "ACCEPT"); err != nil {
 			return fmt.Errorf("failed to add RFC1918 allow rule: %w", err)
 		}
-	} else if cfg.BlockPrivateNetworks {
+	} else if config.BoolVal(cfg.BlockPrivateNetworks) {
 		// Block RFC1918 ranges
 		if err := f.addRule(10, f.containerIP, "10.0.0.0/8", "REJECT"); err != nil {
 			return fmt.Errorf("failed to add RFC1918 block rule: %w", err)
@@ -68,7 +68,7 @@ func (f *FirewallManager) ApplyRestricted(cfg *config.NetworkConfig) error {
 	}
 
 	// Block metadata endpoints
-	if cfg.BlockMetadataEndpoint {
+	if config.BoolVal(cfg.BlockMetadataEndpoint) {
 		if err := f.addRule(10, f.containerIP, "169.254.0.0/16", "REJECT"); err != nil {
 			return fmt.Errorf("failed to add metadata block rule: %w", err)
 		}
@@ -100,7 +100,7 @@ func (f *FirewallManager) ApplyAllowlist(cfg *config.NetworkConfig, allowedIPs [
 	}
 
 	// Handle local network access
-	if cfg.AllowLocalNetworkAccess {
+	if config.BoolVal(cfg.AllowLocalNetworkAccess) {
 		// Allow all RFC1918 when local network access is enabled
 		if err := f.addRule(1, f.containerIP, "10.0.0.0/8", "ACCEPT"); err != nil {
 			return fmt.Errorf("failed to add RFC1918 allow rule: %w", err)
@@ -130,7 +130,7 @@ func (f *FirewallManager) ApplyAllowlist(cfg *config.NetworkConfig, allowedIPs [
 	}
 
 	// Block RFC1918 and metadata (unless local network access is enabled)
-	if !cfg.AllowLocalNetworkAccess {
+	if !config.BoolVal(cfg.AllowLocalNetworkAccess) {
 		if err := f.addRule(10, f.containerIP, "10.0.0.0/8", "REJECT"); err != nil {
 			return fmt.Errorf("failed to add RFC1918 block rule: %w", err)
 		}

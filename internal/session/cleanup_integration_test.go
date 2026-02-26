@@ -234,10 +234,11 @@ func TestEndToEndCleanupWithRestrictedMode(t *testing.T) {
 	t.Logf("Container IP: %s", containerIP)
 
 	// Set up network manager with restricted mode
+	boolTrue := true
 	netCfg := &config.NetworkConfig{
 		Mode:                  config.NetworkModeRestricted,
-		BlockPrivateNetworks:  true,
-		BlockMetadataEndpoint: true,
+		BlockPrivateNetworks:  &boolTrue,
+		BlockMetadataEndpoint: &boolTrue,
 	}
 	netMgr := network.NewManager(netCfg)
 

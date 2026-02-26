@@ -45,7 +45,7 @@ func TestLoadFromEnv(t *testing.T) {
 		t.Errorf("Expected image 'env-image', got '%s'", cfg.Defaults.Image)
 	}
 
-	if !cfg.Defaults.Persistent {
+	if cfg.Defaults.Persistent == nil || !*cfg.Defaults.Persistent {
 		t.Error("Expected persistent to be true from env")
 	}
 }

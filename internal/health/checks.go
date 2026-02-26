@@ -940,10 +940,11 @@ func CheckNetworkRestriction(imageName string) HealthCheck {
 
 	// Apply restricted mode firewall rules
 	firewallManager = network.NewFirewallManager(containerIP, gatewayIP)
+	boolTrue := true
 	restrictedConfig := &config.NetworkConfig{
 		Mode:                  config.NetworkModeRestricted,
-		BlockPrivateNetworks:  true,
-		BlockMetadataEndpoint: true,
+		BlockPrivateNetworks:  &boolTrue,
+		BlockMetadataEndpoint: &boolTrue,
 	}
 
 	if err := firewallManager.ApplyRestricted(restrictedConfig); err != nil {
@@ -1873,14 +1874,14 @@ func CheckCgroupAvailability() HealthCheck {
 // CheckMonitoringConfiguration checks if monitoring is properly configured
 func CheckMonitoringConfiguration(cfg *config.Config) HealthCheck {
 	details := map[string]interface{}{
-		"enabled":                cfg.Monitoring.Enabled,
-		"auto_pause_on_high":     cfg.Monitoring.AutoPauseOnHigh,
-		"auto_kill_on_critical":  cfg.Monitoring.AutoKillOnCritical,
+		"enabled":                config.BoolVal(cfg.Monitoring.Enabled),
+		"auto_pause_on_high":     config.BoolVal(cfg.Monitoring.AutoPauseOnHigh),
+		"auto_kill_on_critical":  config.BoolVal(cfg.Monitoring.AutoKillOnCritical),
 		"poll_interval_sec":      cfg.Monitoring.PollIntervalSec,
 		"file_read_threshold_mb": cfg.Monitoring.FileReadThresholdMB,
 	}
 
-	if !cfg.Monitoring.Enabled {
+	if !config.BoolVal(cfg.Monitoring.Enabled) {
 		return HealthCheck{
 			Name:    "monitoring_configuration",
 			Status:  StatusWarning,
