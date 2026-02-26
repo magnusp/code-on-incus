@@ -175,7 +175,7 @@ install_claude_cli() {
 install_opencode() {
     log "Installing opencode..."
 
-    su - "$CODE_USER" -c 'curl -fsSL https://raw.githubusercontent.com/opencode-ai/opencode/refs/heads/main/install | bash'
+    su - "$CODE_USER" -c 'curl -fsSL https://opencode.ai/install | bash'
 
     local OPENCODE_PATH="/home/$CODE_USER/.opencode/bin/opencode"
     if [[ ! -x "$OPENCODE_PATH" ]]; then
