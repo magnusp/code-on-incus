@@ -65,8 +65,8 @@ func TestDaemonErrorsRouteToOnError(t *testing.T) {
 
 	// Build daemon manually to avoid requiring real nftables/journald
 	daemon := &Daemon{
-		config:   &cfg,
-		detector: NewNetworkDetector(&cfg),
+		config:    &cfg,
+		detector:  NewNetworkDetector(&cfg),
 		responder: responder,
 		auditLog:  auditLog,
 		ctx:       ctx,
