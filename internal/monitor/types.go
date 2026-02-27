@@ -1,6 +1,9 @@
 package monitor
 
-import "time"
+import (
+	"fmt"
+	"time"
+)
 
 // ThreatLevel indicates severity of detected threat
 type ThreatLevel string
@@ -20,7 +23,7 @@ type ThreatEvent struct {
 	Category    string      `json:"category"`    // "network", "process", "filesystem", "env"
 	Title       string      `json:"title"`       // "Reverse shell detected"
 	Description string      `json:"description"` // Detailed explanation
-	Evidence    interface{} `json:"evidence"`    // Supporting data (connection, process, etc.)
+	Evidence    Evidence    `json:"evidence"`    // Supporting data (typed union)
 	Action      string      `json:"action"`      // "logged", "alerted", "paused", "killed"
 }
 
@@ -47,6 +50,41 @@ type FilesystemThreat struct {
 	FilesRead   int     `json:"files_read"`
 	Duration    string  `json:"duration"`
 	Threshold   float64 `json:"threshold_mb"`
+}
+
+// DiskSpaceInfo holds disk space metrics for /tmp threshold warnings
+type DiskSpaceInfo struct {
+	TmpUsedMB      float64 `json:"tmp_used_mb"`
+	TmpTotalMB     float64 `json:"tmp_total_mb"`
+	TmpUsedPercent float64 `json:"tmp_used_percent"`
+}
+
+// Evidence holds threat-specific supporting data.
+// Exactly one field will be non-nil per threat event.
+type Evidence struct {
+	Process    *ProcessThreat         `json:"process,omitempty"`
+	Network    *NetworkThreat         `json:"network,omitempty"`
+	Filesystem *FilesystemThreat      `json:"filesystem,omitempty"`
+	FileWrite  *FilesystemWriteThreat `json:"file_write,omitempty"`
+	DiskSpace  *DiskSpaceInfo         `json:"disk_space,omitempty"`
+}
+
+// String returns a summary of the evidence for deduplication keys
+func (e Evidence) String() string {
+	switch {
+	case e.Process != nil:
+		return fmt.Sprintf("pid:%d cmd:%s", e.Process.PID, e.Process.Command)
+	case e.Network != nil:
+		return fmt.Sprintf("remote:%s reason:%s", e.Network.Connection.RemoteAddr, e.Network.Reason)
+	case e.Filesystem != nil:
+		return fmt.Sprintf("read:%.2fMB", e.Filesystem.ReadBytesMB)
+	case e.FileWrite != nil:
+		return fmt.Sprintf("write:%.2fMB", e.FileWrite.WriteBytesMB)
+	case e.DiskSpace != nil:
+		return fmt.Sprintf("tmp:%.1f%%", e.DiskSpace.TmpUsedPercent)
+	default:
+		return ""
+	}
 }
 
 // MonitorSnapshot represents a point-in-time view of container metrics

@@ -8,6 +8,8 @@
 
 - [Refactoring] **Decompose shell.go duplicated code** - Extracted three helper functions (`buildCLICommand`, `buildContainerEnv`, `ensureTmuxServer`) from `runCLI()` and `runCLIInTmux()` to eliminate ~76 lines of duplicated code. Also removed a redundant second tmux server-polling loop in the interactive branch of `runCLIInTmux()`. Pure refactoring with no behavioral changes.
 
+- [Refactoring] **Replace Evidence `interface{}` with typed structs** - Both `monitor.ThreatEvent` and `nftmonitor.ThreatEvent` used `Evidence interface{}` to carry threat-specific data, losing type safety. Replaced with a typed `Evidence` struct (optional fields pattern) in the monitor package and a concrete `*NetworkEvent` type in nftmonitor. Also fixes a bug where the responder's deduplication key enrichment (`responder.go:63`) used a duck-type assertion for `String()` that never succeeded because no evidence types implemented it. Added `DiskSpaceInfo` struct to replace an ad-hoc `map[string]interface{}` for disk space warnings.
+
 ### Bug Fixes
 
 - [Bug Fix] **Container user UID/GID remapping for non-default code_uid** - When `code_uid` is set to a value other than 1000, COI now remaps the container user's UID/GID to match. Previously, the container user stayed at UID 1000 (baked into the image), causing "Permission denied" on `.bashrc`, "I have no name!" prompts, and group lookup failures. Fixes #166.

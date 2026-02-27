@@ -50,7 +50,7 @@ func StartDaemon(ctx context.Context, cfg Config) (*Daemon, error) {
 					Category:    threat.Category,
 					Title:       threat.Title,
 					Description: threat.Description,
-					Evidence:    threat.Evidence,
+					Evidence:    nil, // Evidence is not consumed by the callback
 				})
 			}
 		},
@@ -150,7 +150,7 @@ func (d *Daemon) processEvents() {
 					Category:    threat.Category,
 					Title:       threat.Title,
 					Description: threat.Description,
-					Evidence:    threat.Evidence,
+					Evidence:    monitor.Evidence{Network: nftEventToNetworkThreat(threat.Evidence)},
 					Action:      "pending",
 				}
 
@@ -168,6 +168,22 @@ func (d *Daemon) processEvents() {
 				debugf("No threat detected for event to %s:%d", event.DstIP, event.DstPort)
 			}
 		}
+	}
+}
+
+// nftEventToNetworkThreat converts a nftmonitor NetworkEvent to a monitor NetworkThreat
+func nftEventToNetworkThreat(event *NetworkEvent) *monitor.NetworkThreat {
+	if event == nil {
+		return nil
+	}
+	return &monitor.NetworkThreat{
+		Connection: monitor.Connection{
+			Protocol:   event.Protocol,
+			LocalAddr:  fmt.Sprintf("%s:%d", event.SrcIP, event.SrcPort),
+			RemoteAddr: fmt.Sprintf("%s:%d", event.DstIP, event.DstPort),
+		},
+		Reason:     fmt.Sprintf("%s connection to %s:%d", event.Protocol, event.DstIP, event.DstPort),
+		RemoteHost: event.DstIP,
 	}
 }
 

@@ -38,7 +38,7 @@ type ThreatEvent struct {
 	Category    string
 	Title       string
 	Description string
-	Evidence    interface{}
+	Evidence    *NetworkEvent `json:"evidence,omitempty"`
 }
 
 // ThreatLevel represents the severity of a threat
