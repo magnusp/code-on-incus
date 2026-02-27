@@ -638,10 +638,15 @@ class TestNFTRuleCleanupOnKill:
             if not container_ip:
                 pytest.skip("Container has no IP address")
 
-            # Verify rules exist before kill
-            assert check_nft_rules_exist(container_ip), (
-                f"NFT rules should exist for {container_ip} before kill"
-            )
+            # Poll for NFT rules (may take a moment after container is running)
+            nft_ready = False
+            for _ in range(15):
+                if check_nft_rules_exist(container_ip):
+                    nft_ready = True
+                    break
+                time.sleep(1)
+
+            assert nft_ready, f"NFT rules should exist for {container_ip} before kill"
 
             # Kill using coi kill command
             kill_result = subprocess.run(
@@ -697,10 +702,15 @@ class TestNFTRuleCleanupOnKill:
             if not container_ip:
                 pytest.skip("Container has no IP address")
 
-            # Verify rules exist before triggering kill
-            assert check_nft_rules_exist(container_ip), (
-                f"NFT rules should exist for {container_ip} before auto-kill"
-            )
+            # Poll for NFT rules (may take a moment after container is running)
+            nft_ready = False
+            for _ in range(15):
+                if check_nft_rules_exist(container_ip):
+                    nft_ready = True
+                    break
+                time.sleep(1)
+
+            assert nft_ready, f"NFT rules should exist for {container_ip} before auto-kill"
 
             # Trigger auto-kill by accessing metadata endpoint (CRITICAL threat)
             subprocess.run(
