@@ -405,6 +405,23 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		return nil, err
 	}
 
+	// 6.5. Remap container user UID/GID if configured UID differs from image default (1000)
+	// The COI image builds the 'code' user with UID/GID 1000. If code_uid is set to a
+	// different value, remap the user inside the container so /etc/passwd, home directory
+	// ownership, and file permissions all match the configured UID.
+	if !skipLaunch && usingCoiImage && container.CodeUID != 1000 {
+		opts.Logger(fmt.Sprintf("Remapping user %s from UID 1000 to %d...", container.CodeUser, container.CodeUID))
+		remapCmd := fmt.Sprintf(
+			"groupmod -g %d %s && usermod -u %d -g %d %s && chown -R %s:%s /home/%s",
+			container.CodeUID, container.CodeUser,
+			container.CodeUID, container.CodeUID, container.CodeUser,
+			container.CodeUser, container.CodeUser, container.CodeUser,
+		)
+		if _, err := result.Manager.ExecCommand(remapCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+			return nil, fmt.Errorf("failed to remap user %s to UID %d: %w", container.CodeUser, container.CodeUID, err)
+		}
+	}
+
 	// 7. Start timeout monitor if max_duration is configured
 	if opts.LimitsConfig != nil && opts.LimitsConfig.Runtime.MaxDuration != "" {
 		duration, err := limits.ParseDuration(opts.LimitsConfig.Runtime.MaxDuration)
