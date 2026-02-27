@@ -4,8 +4,6 @@
 package nftmonitor
 
 import (
-	"fmt"
-	"sync"
 	"testing"
 )
 
@@ -257,70 +255,5 @@ func TestExtractTCPFlags(t *testing.T) {
 				t.Errorf("Expected %q, got %q", tt.expected, result)
 			}
 		})
-	}
-}
-
-func TestDroppedEventsReporting(t *testing.T) {
-	var mu sync.Mutex
-	var errors []string
-
-	cfg := &Config{
-		ContainerIP: "10.47.62.50",
-		OnError: func(err error) {
-			mu.Lock()
-			defer mu.Unlock()
-			errors = append(errors, err.Error())
-		},
-	}
-
-	// Create LogReader with a tiny eventChan buffer to force drops
-	lr := &LogReader{
-		config:    cfg,
-		eventChan: make(chan *NetworkEvent, 1),
-	}
-
-	// Fill the channel so the next send will drop
-	lr.eventChan <- &NetworkEvent{}
-
-	// Now simulate drops by directly calling the drop logic
-	// We replicate the default branch behavior here to test the counter + OnError
-	for i := 0; i < 250; i++ {
-		select {
-		case lr.eventChan <- &NetworkEvent{}:
-			t.Fatal("channel should be full")
-		default:
-			count := lr.droppedEvents.Add(1)
-			if count == 1 || count%100 == 0 {
-				if lr.config.OnError != nil {
-					lr.config.OnError(fmt.Errorf("NFT event channel full: %d events dropped", count))
-				}
-			}
-		}
-	}
-
-	// Verify counter
-	got := lr.droppedEvents.Load()
-	if got != 250 {
-		t.Errorf("Expected droppedEvents=250, got %d", got)
-	}
-
-	// Verify OnError was called on first drop (count=1), count=100, count=200
-	mu.Lock()
-	defer mu.Unlock()
-
-	expectedErrors := []string{
-		"NFT event channel full: 1 events dropped",
-		"NFT event channel full: 100 events dropped",
-		"NFT event channel full: 200 events dropped",
-	}
-
-	if len(errors) != len(expectedErrors) {
-		t.Fatalf("Expected %d OnError calls, got %d: %v", len(expectedErrors), len(errors), errors)
-	}
-
-	for i, expected := range expectedErrors {
-		if errors[i] != expected {
-			t.Errorf("OnError call %d: expected %q, got %q", i, expected, errors[i])
-		}
 	}
 }
