@@ -10,6 +10,8 @@
 
 - [Refactoring] **Replace Evidence `interface{}` with typed structs** - Both `monitor.ThreatEvent` and `nftmonitor.ThreatEvent` used `Evidence interface{}` to carry threat-specific data, losing type safety. Replaced with a typed `Evidence` struct (optional fields pattern) in the monitor package and a concrete `*NetworkEvent` type in nftmonitor. Also fixes a bug where the responder's deduplication key enrichment (`responder.go:63`) used a duck-type assertion for `String()` that never succeeded because no evidence types implemented it. Added `DiskSpaceInfo` struct to replace an ad-hoc `map[string]interface{}` for disk space warnings.
 
+- [Refactoring] **Add `context.Context` support to Incus command execution** - Added `*Context` variants for all `IncusExec*`, `IncusOutput*`, and `IncusFilePush` functions; originals become thin `context.Background()` wrappers (non-breaking). Context is wired through the monitoring daemon's collector and responder call chains so `Daemon.Stop()` can now interrupt in-flight Incus subprocesses instead of hitting a 5-second shutdown timeout. Also wired context through the NFT monitor daemon's responder call. Deleted dead code: `ContainerExec` and `ContainerExecOptions` (zero callers). Includes integration tests verifying context cancellation terminates long-running commands promptly.
+
 ### Bug Fixes
 
 - [Bug Fix] **Container user UID/GID remapping for non-default code_uid** - When `code_uid` is set to a value other than 1000, COI now remaps the container user's UID/GID to match. Previously, the container user stayed at UID 1000 (baked into the image), causing "Permission denied" on `.bashrc`, "I have no name!" prompts, and group lookup failures. Fixes #166.
@@ -28,6 +30,12 @@
 
 - [Bug Fix] **Settings.json merge now preserves user env vars** - Fixed sandbox settings merge overwriting user's `env` section in `settings.json`. The shallow `dict.update()` replaced the entire `env` dict, losing user-configured environment variables (e.g., AWS Bedrock settings like `AWS_PROFILE`). Changed to deep merge so nested dicts like `env` are merged key-by-key instead of replaced wholesale.
 
+- [Bug Fix] **`--monitor` flag now enables NFT network monitoring** - Fixed `coi shell --monitor` only enabling traditional process/filesystem monitoring while leaving `cfg.Monitoring.NFT.Enabled` as `false`, so the NFT monitoring daemon never started and NFT rules were never created or cleaned up. Also added `DetectOrphanedNFTMonitorRules()` and `CleanupOrphanedNFTMonitorRules()` to `coi clean --orphans` so orphaned NFT rules (from containers that were removed without cleanup) are now detected and removed.
+
+- [Bug Fix] **Hardcoded `/workspace` paths resolved for `preserve_workspace_path`** - Fixed `coi attach`, `coi run`, and `coi container exec` using hardcoded `/workspace` instead of the dynamic workspace path when `preserve_workspace_path` was enabled. Added `GetWorkspacePath()` to auto-detect the workspace mount path from container device configuration. Also added system directory validation to prevent mounting workspace over critical paths. Includes integration tests.
+
+- [Bug Fix] **Flaky `test_high_threat_without_auto_pause` test stabilized** - Fixed intermittent test failure caused by unreliable I/O patterns: a borderline 50MB text file read via Python (page-cached reads may not trigger cgroup I/O counters). Replaced with a 200MB binary file read via `dd` with `O_DIRECT` (bypasses page cache), added `file_read_rate_mb_per_sec` config, and added pre-state verification with debug output on unexpected states.
+
 ### Features
 
 - [Feature] **Preserve workspace path option** - Added `preserve_workspace_path` config option that mounts the workspace at the same absolute path inside the container as on the host, instead of `/workspace`. This is useful for tools like opencode that store session data relative to the workspace directory, allowing sessions to persist correctly when the same project is opened from different machines or after container recreation. Configure with `[paths] preserve_workspace_path = true` in `~/.config/coi/config.toml` or `.coi.toml`. Off by default. Fixes #108.
@@ -37,6 +45,10 @@
 - [Feature] **Disk space monitoring** - The monitoring system detects when `/tmp` exceeds 80% usage and triggers a WARNING threat. This protects against runaway builds that could fill tmpfs and cause container hangs. The detection logic is verified via Go unit tests in `internal/monitor/detector_test.go`. Note: Integration tests for this feature were removed as they require a small tmpfs (<500MB) which cannot be configured in CI due to base image limitations.
 
 - [Feature] **Concurrent threat detection tests** - Added integration tests for concurrent threat scenarios: (1) simultaneous reverse shell + environment scanning detection, (2) rapid threat burst handling with deduplication. These tests verify the monitoring system correctly handles multiple threats in the same monitoring cycle.
+
+- [Feature] **Claude effort level configuration** - Added support for configuring Claude Code's effort level to prevent interactive prompts during autonomous sessions. Configure with `[tool.claude] effort_level = "medium"` in `.coi.toml`. Valid values: `"low"`, `"medium"` (default), `"high"`. Implementation adds `ClaudeToolConfig` nested struct, a `ToolWithEffortLevel` interface, and injection of `effortLevel` into `settings.json`. Includes unit tests.
+
+- [Feature] **NFT monitor reports dropped events** - The NFT monitor `LogReader` now tracks dropped network events with an atomic counter and reports via the `OnError` callback on the 1st drop and every 100th thereafter, avoiding log flooding during sustained bursts while ensuring operator visibility into event loss. Also increased `eventChan` and `journalChan` buffer sizes from 100 to 1000 (~120KB) for better burst absorption during high-frequency network activity. Includes unit test.
 
 ### Bug Fixes
 
