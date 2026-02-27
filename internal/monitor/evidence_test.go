@@ -260,10 +260,10 @@ func TestResponderDeduplicationSameEvidence(t *testing.T) {
 	)
 
 	threat := ThreatEvent{
-		Timestamp:   time.Now(),
-		Level:       ThreatLevelWarning,
-		Category:    "network",
-		Title:       "Unexpected network connection",
+		Timestamp: time.Now(),
+		Level:     ThreatLevelWarning,
+		Category:  "network",
+		Title:     "Unexpected network connection",
 		Evidence: Evidence{Network: &NetworkThreat{
 			Connection: Connection{RemoteAddr: "1.2.3.4:4444"},
 			Reason:     "Suspicious port",
