@@ -785,64 +785,6 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 	return nil
 }
 
-// setupHomeConfigFile handles config injection for tools that use a single
-// home-dir JSON file (e.g., ~/.opencode.json).
-func setupHomeConfigFile(mgr *container.Manager, hostConfigFilePath, homeDir string,
-	twh tool.ToolWithHomeConfigFile, t tool.Tool, logger func(string),
-) {
-	destPath := filepath.Join(homeDir, twh.HomeConfigFileName())
-
-	// Copy host config if it exists
-	if _, err := os.Stat(hostConfigFilePath); err == nil {
-		logger(fmt.Sprintf("Copying %s from host...", twh.HomeConfigFileName()))
-		if err := mgr.PushFile(hostConfigFilePath, destPath); err != nil {
-			logger(fmt.Sprintf("Warning: Failed to copy %s: %v", twh.HomeConfigFileName(), err))
-		}
-	}
-
-	// Inject sandbox settings (merge into existing or create fresh)
-	sandboxSettings := t.GetSandboxSettings()
-	if len(sandboxSettings) > 0 {
-		logger(fmt.Sprintf("Injecting sandbox settings into %s...", twh.HomeConfigFileName()))
-
-		// Check if file exists in container
-		checkCmd := fmt.Sprintf("test -f %s && echo exists || echo missing", destPath)
-		result, _ := mgr.ExecCommand(checkCmd, container.ExecCommandOptions{Capture: true})
-		if strings.TrimSpace(result) == "missing" {
-			// Create fresh config with sandbox settings
-			settingsBytes, err := json.MarshalIndent(sandboxSettings, "", "  ")
-			if err != nil {
-				logger(fmt.Sprintf("Warning: Failed to marshal sandbox settings: %v", err))
-			} else {
-				if err := mgr.CreateFile(destPath, string(settingsBytes)+"\n"); err != nil {
-					logger(fmt.Sprintf("Warning: Failed to create %s: %v", twh.HomeConfigFileName(), err))
-				}
-			}
-		} else {
-			// Merge sandbox settings into existing config
-			settingsJSON, err := buildJSONFromSettings(sandboxSettings)
-			if err != nil {
-				logger(fmt.Sprintf("Warning: Failed to build JSON from settings: %v", err))
-			} else {
-				escapedJSON := strings.ReplaceAll(settingsJSON, "'", "'\"'\"'")
-				mergeCmd := fmt.Sprintf(
-					`python3 -c 'import json; f=open("%s","r+"); d=json.load(f); updates=json.loads('"'"'%s'"'"'); [d.setdefault(k,{}).update(v) if isinstance(v,dict) and isinstance(d.get(k),dict) else d.__setitem__(k,v) for k,v in updates.items()]; f.seek(0); json.dump(d,f,indent=2); f.truncate()'`,
-					destPath, escapedJSON)
-				if _, err := mgr.ExecCommand(mergeCmd, container.ExecCommandOptions{Capture: true}); err != nil {
-					logger(fmt.Sprintf("Warning: Failed to inject settings into %s: %v", twh.HomeConfigFileName(), err))
-				}
-			}
-		}
-
-		// Fix ownership
-		if homeDir != "/root" {
-			if err := mgr.Chown(destPath, container.CodeUID, container.CodeUID); err != nil {
-				logger(fmt.Sprintf("Warning: Failed to set %s ownership: %v", twh.HomeConfigFileName(), err))
-			}
-		}
-	}
-}
-
 // hasLimits checks if any limits are configured
 func hasLimits(cfg *config.LimitsConfig) bool {
 	if cfg == nil {
