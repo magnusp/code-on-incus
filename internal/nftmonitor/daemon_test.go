@@ -145,6 +145,50 @@ func TestDaemonErrorsRouteToOnError(t *testing.T) {
 	}
 }
 
+// TestNftEventToNetworkThreat verifies the conversion from nftmonitor.NetworkEvent
+// to monitor.NetworkThreat used when forwarding threats to the responder.
+func TestNftEventToNetworkThreat(t *testing.T) {
+	t.Run("nil event returns nil", func(t *testing.T) {
+		result := nftEventToNetworkThreat(nil)
+		if result != nil {
+			t.Errorf("nftEventToNetworkThreat(nil) = %v, want nil", result)
+		}
+	})
+
+	t.Run("converts fields correctly", func(t *testing.T) {
+		event := &NetworkEvent{
+			Timestamp:   time.Now(),
+			ContainerIP: "10.0.0.50",
+			SrcIP:       "10.0.0.50",
+			SrcPort:     12345,
+			DstIP:       "192.168.1.1",
+			DstPort:     4444,
+			Protocol:    "TCP",
+		}
+
+		result := nftEventToNetworkThreat(event)
+		if result == nil {
+			t.Fatal("nftEventToNetworkThreat returned nil for non-nil event")
+		}
+
+		if result.Connection.Protocol != "TCP" {
+			t.Errorf("Protocol = %q, want TCP", result.Connection.Protocol)
+		}
+		if result.Connection.LocalAddr != "10.0.0.50:12345" {
+			t.Errorf("LocalAddr = %q, want 10.0.0.50:12345", result.Connection.LocalAddr)
+		}
+		if result.Connection.RemoteAddr != "192.168.1.1:4444" {
+			t.Errorf("RemoteAddr = %q, want 192.168.1.1:4444", result.Connection.RemoteAddr)
+		}
+		if result.RemoteHost != "192.168.1.1" {
+			t.Errorf("RemoteHost = %q, want 192.168.1.1", result.RemoteHost)
+		}
+		if result.Reason == "" {
+			t.Error("Reason should not be empty")
+		}
+	})
+}
+
 // TestDaemonOnErrorNilSafe verifies that the daemon does not panic when
 // OnError is nil and an error occurs. This ensures backward compatibility.
 func TestDaemonOnErrorNilSafe(t *testing.T) {

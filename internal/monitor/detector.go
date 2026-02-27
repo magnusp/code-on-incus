@@ -50,7 +50,7 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 				Title:     "Reverse shell detected",
 				Description: fmt.Sprintf("Process '%s' (PID %d) matches reverse shell pattern '%s'",
 					rs.Command, rs.PID, rs.Pattern),
-				Evidence: rs,
+				Evidence: Evidence{Process: &rs},
 				Action:   "pending",
 			})
 		}
@@ -68,7 +68,7 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 				Title:     "Environment variable scanning detected",
 				Description: fmt.Sprintf("Process '%s' (PID %d) is accessing environment variables",
 					es.Command, es.PID),
-				Evidence: es,
+				Evidence: Evidence{Process: &es},
 				Action:   "pending",
 			})
 		}
@@ -98,11 +98,11 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 			Title:     "Unexpected network connection",
 			Description: fmt.Sprintf("Connection to %s: %s",
 				conn.RemoteAddr, conn.SuspectReason),
-			Evidence: NetworkThreat{
+			Evidence: Evidence{Network: &NetworkThreat{
 				Connection: conn,
 				Reason:     conn.SuspectReason,
 				RemoteHost: extractIP(conn.RemoteAddr),
-			},
+			}},
 			Action: "pending",
 		})
 	}
@@ -119,7 +119,7 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 				Title:     "Large workspace read detected",
 				Description: fmt.Sprintf("Read %.2f MB at %.2f MB/sec (threshold: %.2f MB)",
 					fsExfil.ReadBytesMB, fsExfil.ReadRate, fsExfil.Threshold),
-				Evidence: fsExfil,
+				Evidence: Evidence{Filesystem: fsExfil},
 				Action:   "pending",
 			})
 		}
@@ -135,7 +135,7 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 				Title:     "Large workspace write detected",
 				Description: fmt.Sprintf("Write %.2f MB at %.2f MB/sec (threshold: %.2f MB)",
 					fsWriteExfil.WriteBytesMB, fsWriteExfil.WriteRate, fsWriteExfil.Threshold),
-				Evidence: fsWriteExfil,
+				Evidence: Evidence{FileWrite: fsWriteExfil},
 				Action:   "pending",
 			})
 		}
@@ -155,11 +155,11 @@ func (d *Detector) Analyze(snapshot MonitorSnapshot) []ThreatEvent {
 					snapshot.Filesystem.TmpUsedPercent,
 					snapshot.Filesystem.TmpUsedMB,
 					snapshot.Filesystem.TmpTotalMB),
-				Evidence: map[string]interface{}{
-					"tmp_used_mb":      snapshot.Filesystem.TmpUsedMB,
-					"tmp_total_mb":     snapshot.Filesystem.TmpTotalMB,
-					"tmp_used_percent": snapshot.Filesystem.TmpUsedPercent,
-				},
+				Evidence: Evidence{DiskSpace: &DiskSpaceInfo{
+					TmpUsedMB:      snapshot.Filesystem.TmpUsedMB,
+					TmpTotalMB:     snapshot.Filesystem.TmpTotalMB,
+					TmpUsedPercent: snapshot.Filesystem.TmpUsedPercent,
+				}},
 				Action: "pending",
 			})
 		}

@@ -60,9 +60,9 @@ func (r *Responder) Handle(ctx context.Context, threat ThreatEvent) error {
 
 	// Deduplicate recent threats - create a key from threat category and title
 	threatKey := threat.Category + ":" + threat.Title
-	if evidence, ok := threat.Evidence.(interface{ String() string }); ok {
+	if s := threat.Evidence.String(); s != "" {
 		// Include evidence summary in key for more precise deduplication
-		threatKey += ":" + evidence.String()
+		threatKey += ":" + s
 	}
 
 	now := time.Now()
