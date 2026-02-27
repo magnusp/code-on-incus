@@ -459,18 +459,27 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 	if opts.Tool != nil {
 		if opts.Tool.ConfigDirName() != "" {
 			// Directory-based config injection (claude-style and opencode-style)
-			if opts.ResumeFromID == "" {
-				// Copy and inject settings (but only if NOT resuming)
-				// Only run on first launch, not when restarting persistent container
-				if !skipLaunch {
-					opts.Logger(fmt.Sprintf("Setting up %s config...", opts.Tool.Name()))
-					if err := setupCLIConfig(result.Manager, opts.CLIConfigPath, result.HomeDir, opts.Tool, opts.Logger); err != nil {
-						opts.Logger(fmt.Sprintf("Warning: Failed to setup %s config: %v", opts.Tool.Name(), err))
+			if opts.CLIConfigPath != "" && opts.ResumeFromID == "" {
+				// ToolWithConfigDirFiles (e.g. opencode) always needs setupCLIConfig
+				// for sandbox injection, even when host config dir is missing.
+				// Other tools (e.g. claude) only run when host config dir exists.
+				_, isConfigDirTool := opts.Tool.(tool.ToolWithConfigDirFiles)
+				_, statErr := os.Stat(opts.CLIConfigPath)
+				hostDirExists := statErr == nil
+
+				if hostDirExists || isConfigDirTool {
+					if !skipLaunch {
+						opts.Logger(fmt.Sprintf("Setting up %s config...", opts.Tool.Name()))
+						if err := setupCLIConfig(result.Manager, opts.CLIConfigPath, result.HomeDir, opts.Tool, opts.Logger); err != nil {
+							opts.Logger(fmt.Sprintf("Warning: Failed to setup %s config: %v", opts.Tool.Name(), err))
+						}
+					} else {
+						opts.Logger(fmt.Sprintf("Reusing existing %s config (persistent container)", opts.Tool.Name()))
 					}
-				} else {
-					opts.Logger(fmt.Sprintf("Reusing existing %s config (persistent container)", opts.Tool.Name()))
+				} else if statErr != nil && !os.IsNotExist(statErr) {
+					return nil, fmt.Errorf("failed to check %s config directory: %w", opts.Tool.Name(), statErr)
 				}
-			} else {
+			} else if opts.ResumeFromID != "" {
 				opts.Logger(fmt.Sprintf("Resuming session - using restored %s config", opts.Tool.Name()))
 			}
 		} else {
