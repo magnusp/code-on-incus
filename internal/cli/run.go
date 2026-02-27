@@ -174,20 +174,8 @@ func runCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remap container user UID/GID if configured UID differs from image default (1000)
-	// The COI image builds the 'code' user with UID/GID 1000. If code_uid is set to a
-	// different value, remap the user inside the container so /etc/passwd, home directory
-	// ownership, and file permissions all match the configured UID.
-	if !wasRestarted && img == "coi" && container.CodeUID != 1000 {
-		fmt.Fprintf(os.Stderr, "Remapping user %s from UID 1000 to %d...\n", container.CodeUser, container.CodeUID)
-		remapCmd := fmt.Sprintf(
-			"groupmod -g %d %s && usermod -u %d -g %d %s && chown -R %s:%s /home/%s",
-			container.CodeUID, container.CodeUser,
-			container.CodeUID, container.CodeUID, container.CodeUser,
-			container.CodeUser, container.CodeUser, container.CodeUser,
-		)
-		if _, err := mgr.ExecCommand(remapCmd, container.ExecCommandOptions{Capture: true}); err != nil {
-			return fmt.Errorf("failed to remap user %s to UID %d: %w", container.CodeUser, container.CodeUID, err)
-		}
+	if err := remapContainerUserIfNeeded(mgr, img, wasRestarted); err != nil {
+		return err
 	}
 
 	// Determine container workspace path (respects preserve_workspace_path config)
@@ -332,6 +320,26 @@ func waitForContainer(mgr *container.Manager, maxRetries int) error {
 		}
 	}
 	return fmt.Errorf("container failed to become ready")
+}
+
+// remapContainerUserIfNeeded remaps the container's 'code' user UID/GID from the
+// image default (1000) to the configured container.CodeUID. Only runs for fresh
+// COI containers when the configured UID differs from the image default.
+func remapContainerUserIfNeeded(mgr *container.Manager, img string, wasRestarted bool) error {
+	if wasRestarted || img != "coi" || container.CodeUID == 1000 {
+		return nil
+	}
+	fmt.Fprintf(os.Stderr, "Remapping user %s from UID 1000 to %d...\n", container.CodeUser, container.CodeUID)
+	remapCmd := fmt.Sprintf(
+		"groupmod -g %d %s && usermod -u %d -g %d %s && chown -R %s:%s /home/%s",
+		container.CodeUID, container.CodeUser,
+		container.CodeUID, container.CodeUID, container.CodeUser,
+		container.CodeUser, container.CodeUser, container.CodeUser,
+	)
+	if _, err := mgr.ExecCommand(remapCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+		return fmt.Errorf("failed to remap user %s to UID %d: %w", container.CodeUser, container.CodeUID, err)
+	}
+	return nil
 }
 
 // hasAnyLimits checks if any limits are configured (used in run.go)
