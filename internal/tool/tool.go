@@ -14,7 +14,7 @@ type Tool interface {
 	// Binary returns the binary name to execute
 	Binary() string
 
-	// ConfigDirName returns config directory name (e.g., ".claude", ".aider")
+	// ConfigDirName returns config directory name (e.g., ".claude", ".config/opencode")
 	// Return "" if tool uses ENV API keys instead of config files
 	ConfigDirName() string
 
@@ -36,6 +36,33 @@ type Tool interface {
 	// GetSandboxSettings returns settings to inject for sandbox/bypass permissions
 	// Return empty map if tool doesn't need settings injection
 	GetSandboxSettings() map[string]interface{}
+}
+
+// ToolWithConfigDirFiles is implemented by every tool that uses a config
+// directory (ConfigDirName != ""). It tells setupCLIConfig which files to
+// copy, where to inject sandbox settings, and whether a sibling state file
+// (e.g. ~/.claude.json) exists.
+type ToolWithConfigDirFiles interface {
+	Tool
+
+	// EssentialConfigFiles returns filenames inside the config directory
+	// that should be copied from the host (e.g. ["settings.json", ".credentials.json"]).
+	EssentialConfigFiles() []string
+
+	// SandboxSettingsFileName returns the filename inside the config directory
+	// where GetSandboxSettings() should be injected (e.g. "settings.json", "opencode.json").
+	SandboxSettingsFileName() string
+
+	// StateConfigFileName returns the name of a JSON state file that lives as
+	// a sibling next to the config directory (e.g. ".claude.json").
+	// Return "" if the tool has no such file.
+	StateConfigFileName() string
+
+	// AlwaysSetupConfig returns true if setupCLIConfig should run even when
+	// the host config directory doesn't exist (e.g. opencode needs sandbox
+	// injection regardless). Return false to skip setup when there's nothing
+	// to copy from the host (e.g. Claude needs credentials from ~/.claude).
+	AlwaysSetupConfig() bool
 }
 
 // ClaudeTool implements Tool for Claude Code
@@ -134,29 +161,27 @@ func (c *ClaudeTool) GetSandboxSettings() map[string]interface{} {
 	return settings
 }
 
+// EssentialConfigFiles implements ToolWithConfigDirFiles.
+func (c *ClaudeTool) EssentialConfigFiles() []string {
+	return []string{".credentials.json", "config.yml", "settings.json"}
+}
+
+// SandboxSettingsFileName implements ToolWithConfigDirFiles.
+func (c *ClaudeTool) SandboxSettingsFileName() string { return "settings.json" }
+
+// StateConfigFileName implements ToolWithConfigDirFiles.
+// Claude uses ~/.claude.json as a sibling state file next to ~/.claude/.
+func (c *ClaudeTool) StateConfigFileName() string { return ".claude.json" }
+
+// AlwaysSetupConfig implements ToolWithConfigDirFiles.
+// Claude needs credentials from ~/.claude, so skip setup when host dir is missing.
+func (c *ClaudeTool) AlwaysSetupConfig() bool { return false }
+
 // SetEffortLevel sets the effort level for Claude Code.
 // Valid values: "low", "medium", "high".
 // This prevents the interactive effort prompt during autonomous sessions.
 func (c *ClaudeTool) SetEffortLevel(level string) {
 	c.effortLevel = level
-}
-
-// ToolWithHomeConfigFile is an optional interface for tools that store their
-// configuration in a single JSON file in the user's home directory
-// (e.g., ~/.opencode.json), rather than a subdirectory.
-type ToolWithHomeConfigFile interface {
-	Tool
-	// HomeConfigFileName returns the dot-prefixed filename in the home dir
-	// (e.g., ".opencode.json").
-	HomeConfigFileName() string
-}
-
-// ToolWithConfigDirFiles is an optional interface for directory-based tools
-// that need custom essential files and sandbox settings target.
-type ToolWithConfigDirFiles interface {
-	Tool
-	EssentialConfigFiles() []string
-	SandboxSettingsFileName() string
 }
 
 // ToolWithEffortLevel is an optional interface for tools that support

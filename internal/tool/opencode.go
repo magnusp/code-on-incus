@@ -43,3 +43,11 @@ func (c *OpencodeTool) EssentialConfigFiles() []string {
 
 // SandboxSettingsFileName implements ToolWithConfigDirFiles.
 func (c *OpencodeTool) SandboxSettingsFileName() string { return "opencode.json" }
+
+// StateConfigFileName implements ToolWithConfigDirFiles.
+// Opencode has no sibling state file.
+func (c *OpencodeTool) StateConfigFileName() string { return "" }
+
+// AlwaysSetupConfig implements ToolWithConfigDirFiles.
+// Opencode needs sandbox permission bypass even without host config dir.
+func (c *OpencodeTool) AlwaysSetupConfig() bool { return true }

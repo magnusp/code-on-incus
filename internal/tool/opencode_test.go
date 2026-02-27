@@ -105,6 +105,28 @@ func TestOpencodeTool_SandboxSettingsFileName(t *testing.T) {
 	}
 }
 
+func TestOpencodeTool_StateConfigFileName(t *testing.T) {
+	oc := NewOpencode()
+	tcf, ok := oc.(ToolWithConfigDirFiles)
+	if !ok {
+		t.Fatal("OpencodeTool does not implement ToolWithConfigDirFiles")
+	}
+	if tcf.StateConfigFileName() != "" {
+		t.Errorf("StateConfigFileName() = %q, want %q", tcf.StateConfigFileName(), "")
+	}
+}
+
+func TestOpencodeTool_AlwaysSetupConfig(t *testing.T) {
+	oc := NewOpencode()
+	tcf, ok := oc.(ToolWithConfigDirFiles)
+	if !ok {
+		t.Fatal("OpencodeTool does not implement ToolWithConfigDirFiles")
+	}
+	if !tcf.AlwaysSetupConfig() {
+		t.Error("AlwaysSetupConfig() = false, want true")
+	}
+}
+
 func TestOpencodeTool_RegistryLookup(t *testing.T) {
 	oc, err := Get("opencode")
 	if err != nil {

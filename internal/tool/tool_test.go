@@ -238,6 +238,41 @@ func TestClaudeEffortLevelDefault(t *testing.T) {
 	}
 }
 
+func TestClaudeToolConfigDirFiles(t *testing.T) {
+	tool := NewClaude()
+	tcf, ok := tool.(ToolWithConfigDirFiles)
+	if !ok {
+		t.Fatal("ClaudeTool does not implement ToolWithConfigDirFiles")
+	}
+
+	// EssentialConfigFiles
+	files := tcf.EssentialConfigFiles()
+	expected := []string{".credentials.json", "config.yml", "settings.json"}
+	if len(files) != len(expected) {
+		t.Fatalf("EssentialConfigFiles() = %v, want %v", files, expected)
+	}
+	for i, f := range files {
+		if f != expected[i] {
+			t.Errorf("EssentialConfigFiles()[%d] = %q, want %q", i, f, expected[i])
+		}
+	}
+
+	// SandboxSettingsFileName
+	if tcf.SandboxSettingsFileName() != "settings.json" {
+		t.Errorf("SandboxSettingsFileName() = %q, want %q", tcf.SandboxSettingsFileName(), "settings.json")
+	}
+
+	// StateConfigFileName
+	if tcf.StateConfigFileName() != ".claude.json" {
+		t.Errorf("StateConfigFileName() = %q, want %q", tcf.StateConfigFileName(), ".claude.json")
+	}
+
+	// AlwaysSetupConfig
+	if tcf.AlwaysSetupConfig() {
+		t.Error("AlwaysSetupConfig() = true, want false")
+	}
+}
+
 func TestRegistryGet_Claude(t *testing.T) {
 	tool, err := Get("claude")
 	if err != nil {

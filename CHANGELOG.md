@@ -4,6 +4,8 @@
 
 ### Refactoring
 
+- [Refactoring] **Unified config handling for all tools** - Both `ClaudeTool` and `OpencodeTool` now implement the `ToolWithConfigDirFiles` interface, eliminating hardcoded Claude-specific defaults from `setupCLIConfig()`. Removed the dead `ToolWithHomeConfigFile` interface and `setupHomeConfigFile()` function. The `ToolWithConfigDirFiles` interface now includes `StateConfigFileName()` and `AlwaysSetupConfig()` so each tool fully describes its own config layout.
+
 - [Refactoring] **Decompose shell.go duplicated code** - Extracted three helper functions (`buildCLICommand`, `buildContainerEnv`, `ensureTmuxServer`) from `runCLI()` and `runCLIInTmux()` to eliminate ~76 lines of duplicated code. Also removed a redundant second tmux server-polling loop in the interactive branch of `runCLIInTmux()`. Pure refactoring with no behavioral changes.
 
 ### Bug Fixes
