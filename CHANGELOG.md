@@ -4,9 +4,15 @@
 
 ### Refactoring
 
+- [Refactoring] **Unified config handling for all tools** - Both `ClaudeTool` and `OpencodeTool` now implement the `ToolWithConfigDirFiles` interface, eliminating hardcoded Claude-specific defaults from `setupCLIConfig()`. Removed the dead `ToolWithHomeConfigFile` interface and `setupHomeConfigFile()` function. The `ToolWithConfigDirFiles` interface now includes `StateConfigFileName()` and `AlwaysSetupConfig()` so each tool fully describes its own config layout.
+
 - [Refactoring] **Decompose shell.go duplicated code** - Extracted three helper functions (`buildCLICommand`, `buildContainerEnv`, `ensureTmuxServer`) from `runCLI()` and `runCLIInTmux()` to eliminate ~76 lines of duplicated code. Also removed a redundant second tmux server-polling loop in the interactive branch of `runCLIInTmux()`. Pure refactoring with no behavioral changes.
 
 ### Bug Fixes
+
+- [Bug Fix] **Resume path now uses ToolWithConfigDirFiles interface** - Fixed `injectCredentials()` hardcoding Claude-specific assumptions (requiring `.credentials.json` and using `.${tool}.json` state filename). The resume path now uses `EssentialConfigFiles()`, `StateConfigFileName()`, and `SandboxSettingsFileName()` from the interface, so tools like opencode that don't use credential files can resume without errors.
+
+- [Bug Fix] **opencode global config now uses correct XDG location** - Fixed opencode configuration being placed at `~/.opencode.json` (old format) instead of `~/.config/opencode/opencode.json` (current XDG-standard location). The sandbox permission bypass and user's global config are now correctly injected. Also copies `tui.json` when present. Fixes #158.
 
 - [Bug Fix] **opencode install URL updated** - Fixed the opencode installation script using an outdated GitHub raw URL that installed an old version (v0.0.55). Updated to the official `https://opencode.ai/install` URL per the opencode docs. Fixes #157.
 

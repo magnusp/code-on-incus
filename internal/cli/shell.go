@@ -114,9 +114,8 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	// Check if tool uses workspace-based sessions (like opencode stores in .opencode/)
 	// These tools don't need COI session tracking - their data is in the workspace
 	isWorkspaceSessionTool := false
-	if _, ok := toolInstance.(tool.ToolWithHomeConfigFile); ok {
-		// File-based tools like opencode store sessions in workspace, not ~/.coi/sessions-*
-		// Check for .opencode/ or similar in workspace
+	if toolInstance.Name() == "opencode" {
+		// opencode stores sessions in workspace .opencode/ SQLite, not ~/.coi/sessions-*
 		workspaceSessionDir := filepath.Join(absWorkspace, ".opencode")
 		if info, err := os.Stat(workspaceSessionDir); err == nil && info.IsDir() {
 			isWorkspaceSessionTool = true
@@ -209,15 +208,10 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// Determine CLI config path based on tool
-	// For file-based tools (ToolWithHomeConfigFile), point at the single config file.
 	// For directory-based tools (ConfigDirName != ""), point at the config directory.
-	// For ENV-based tools (both return ""), leave empty.
+	// For ENV-based tools (returns ""), leave empty.
 	var cliConfigPath string
-	if twh, ok := toolInstance.(tool.ToolWithHomeConfigFile); ok {
-		// File-based config (e.g., ~/.opencode.json)
-		cliConfigPath = filepath.Join(homeDir, twh.HomeConfigFileName())
-	} else if configDirName := toolInstance.ConfigDirName(); configDirName != "" {
-		// Directory-based config (e.g., ~/.claude/)
+	if configDirName := toolInstance.ConfigDirName(); configDirName != "" {
 		cliConfigPath = filepath.Join(homeDir, configDirName)
 	}
 

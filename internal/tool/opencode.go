@@ -10,9 +10,8 @@ func (c *OpencodeTool) Name() string { return "opencode" }
 
 func (c *OpencodeTool) Binary() string { return "opencode" }
 
-// ConfigDirName returns "" because opencode uses a single file, not a directory.
-// See HomeConfigFileName for the actual config file name.
-func (c *OpencodeTool) ConfigDirName() string { return "" }
+// ConfigDirName returns the XDG-standard config directory for opencode.
+func (c *OpencodeTool) ConfigDirName() string { return ".config/opencode" }
 
 func (c *OpencodeTool) SessionsDirName() string { return "sessions-opencode" }
 
@@ -28,7 +27,7 @@ func (c *OpencodeTool) BuildCommand(sessionID string, resume bool, resumeSession
 func (c *OpencodeTool) DiscoverSessionID(stateDir string) string { return "" }
 
 // GetSandboxSettings returns the opencode permission bypass config.
-// Injected into ~/.opencode.json so opencode runs without interactive prompts.
+// Injected into ~/.config/opencode/opencode.json so opencode runs without interactive prompts.
 func (c *OpencodeTool) GetSandboxSettings() map[string]interface{} {
 	return map[string]interface{}{
 		"permission": map[string]interface{}{
@@ -37,5 +36,18 @@ func (c *OpencodeTool) GetSandboxSettings() map[string]interface{} {
 	}
 }
 
-// HomeConfigFileName implements ToolWithHomeConfigFile.
-func (c *OpencodeTool) HomeConfigFileName() string { return ".opencode.json" }
+// EssentialConfigFiles implements ToolWithConfigDirFiles.
+func (c *OpencodeTool) EssentialConfigFiles() []string {
+	return []string{"opencode.json", "tui.json"}
+}
+
+// SandboxSettingsFileName implements ToolWithConfigDirFiles.
+func (c *OpencodeTool) SandboxSettingsFileName() string { return "opencode.json" }
+
+// StateConfigFileName implements ToolWithConfigDirFiles.
+// Opencode has no sibling state file.
+func (c *OpencodeTool) StateConfigFileName() string { return "" }
+
+// AlwaysSetupConfig implements ToolWithConfigDirFiles.
+// Opencode needs sandbox permission bypass even without host config dir.
+func (c *OpencodeTool) AlwaysSetupConfig() bool { return true }

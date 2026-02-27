@@ -433,29 +433,19 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 	}
 
 	// 9. When resuming: restore session data if container was recreated, then inject credentials
-	// Skip if tool uses ENV-based auth (no config directory and not file-based)
-	isFileBased := func(t tool.Tool) bool {
-		twh, ok := t.(tool.ToolWithHomeConfigFile)
-		return ok && twh.HomeConfigFileName() != ""
-	}
-
-	if opts.ResumeFromID != "" && opts.Tool != nil &&
-		(opts.Tool.ConfigDirName() != "" || isFileBased(opts.Tool)) {
+	// Skip if tool uses ENV-based auth (no config directory)
+	if opts.ResumeFromID != "" && opts.Tool != nil && opts.Tool.ConfigDirName() != "" {
 		// If we launched a new container (not reusing persistent one), restore config from saved session
-		// Only for directory-based tools (claude-style) - file-based tools (opencode) store sessions
-		// in the workspace which is already bind-mounted
-		if !skipLaunch && opts.SessionsDir != "" && opts.Tool.ConfigDirName() != "" {
+		if !skipLaunch && opts.SessionsDir != "" {
 			if err := restoreSessionData(result.Manager, opts.ResumeFromID, result.HomeDir, opts.SessionsDir, opts.Tool, opts.Logger); err != nil {
 				opts.Logger(fmt.Sprintf("Warning: Could not restore session data: %v", err))
 			}
 		}
 
-		// Always inject fresh credentials when resuming (whether persistent container or restored session)
-		if opts.CLIConfigPath != "" {
-			if twh, ok := opts.Tool.(tool.ToolWithHomeConfigFile); ok {
-				setupHomeConfigFile(result.Manager, opts.CLIConfigPath, result.HomeDir, twh, opts.Tool, opts.Logger)
-			} else {
-				if err := injectCredentials(result.Manager, opts.CLIConfigPath, result.HomeDir, opts.Tool, opts.Logger); err != nil {
+		// Always inject fresh credentials/sandbox settings when resuming
+		if tcf, ok := opts.Tool.(tool.ToolWithConfigDirFiles); ok {
+			if opts.CLIConfigPath != "" || tcf.AlwaysSetupConfig() {
+				if err := injectCredentials(result.Manager, opts.CLIConfigPath, result.HomeDir, tcf, opts.Logger); err != nil {
 					opts.Logger(fmt.Sprintf("Warning: Could not inject credentials: %v", err))
 				}
 			}
@@ -469,35 +459,27 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 
 	// 11. Setup CLI tool config (skip if resuming - config already restored)
 	if opts.Tool != nil {
-		if twh, ok := opts.Tool.(tool.ToolWithHomeConfigFile); ok {
-			// File-based config injection (opencode-style)
-			if opts.CLIConfigPath != "" && opts.ResumeFromID == "" && !skipLaunch {
-				setupHomeConfigFile(result.Manager, opts.CLIConfigPath, result.HomeDir, twh, opts.Tool, opts.Logger)
-			} else if opts.ResumeFromID != "" {
-				opts.Logger(fmt.Sprintf("Resuming session - using restored %s config", opts.Tool.Name()))
-			}
-		} else if opts.Tool.ConfigDirName() != "" {
-			// Directory-based config injection (claude-style)
+		if tcf, ok := opts.Tool.(tool.ToolWithConfigDirFiles); ok {
 			if opts.CLIConfigPath != "" && opts.ResumeFromID == "" {
-				// Check if host config directory exists
-				if _, err := os.Stat(opts.CLIConfigPath); err == nil {
-					// Copy and inject settings (but only if NOT resuming)
-					// Only run on first launch, not when restarting persistent container
+				_, statErr := os.Stat(opts.CLIConfigPath)
+				hostDirExists := statErr == nil
+
+				if hostDirExists || tcf.AlwaysSetupConfig() {
 					if !skipLaunch {
 						opts.Logger(fmt.Sprintf("Setting up %s config...", opts.Tool.Name()))
-						if err := setupCLIConfig(result.Manager, opts.CLIConfigPath, result.HomeDir, opts.Tool, opts.Logger); err != nil {
+						if err := setupCLIConfig(result.Manager, opts.CLIConfigPath, result.HomeDir, tcf, opts.Logger); err != nil {
 							opts.Logger(fmt.Sprintf("Warning: Failed to setup %s config: %v", opts.Tool.Name(), err))
 						}
 					} else {
 						opts.Logger(fmt.Sprintf("Reusing existing %s config (persistent container)", opts.Tool.Name()))
 					}
-				} else if !os.IsNotExist(err) {
-					return nil, fmt.Errorf("failed to check %s config directory: %w", opts.Tool.Name(), err)
+				} else if statErr != nil && !os.IsNotExist(statErr) {
+					return nil, fmt.Errorf("failed to check %s config directory: %w", opts.Tool.Name(), statErr)
 				}
 			} else if opts.ResumeFromID != "" {
 				opts.Logger(fmt.Sprintf("Resuming session - using restored %s config", opts.Tool.Name()))
 			}
-		} else {
+		} else if opts.Tool.ConfigDirName() == "" {
 			opts.Logger(fmt.Sprintf("Tool %s uses ENV-based auth, skipping config setup", opts.Tool.Name()))
 		}
 	}
@@ -564,36 +546,72 @@ func restoreSessionData(mgr *container.Manager, resumeID, homeDir, sessionsDir s
 	return nil
 }
 
-// injectCredentials copies credentials and essential config from host to container when resuming
-// This ensures fresh authentication while preserving the session conversation history
-func injectCredentials(mgr *container.Manager, hostCLIConfigPath, homeDir string, t tool.Tool, logger func(string)) error {
+// injectCredentials copies essential config files and sandbox settings from host to container when resuming.
+// This ensures fresh authentication while preserving the session conversation history.
+// Uses the ToolWithConfigDirFiles interface so each tool declares its own files and layout.
+func injectCredentials(mgr *container.Manager, hostCLIConfigPath, homeDir string, tcf tool.ToolWithConfigDirFiles, logger func(string)) error {
 	logger("Injecting fresh credentials and config for session resume...")
 
-	configDirName := t.ConfigDirName()
+	configDirName := tcf.ConfigDirName()
+	stateDir := filepath.Join(homeDir, configDirName)
 
-	// Copy .credentials.json from host to container
-	credentialsPath := filepath.Join(hostCLIConfigPath, ".credentials.json")
-	if _, err := os.Stat(credentialsPath); err != nil {
-		return fmt.Errorf("credentials file not found: %w", err)
-	}
-
-	destCredentials := filepath.Join(homeDir, configDirName, ".credentials.json")
-	if err := mgr.PushFile(credentialsPath, destCredentials); err != nil {
-		return fmt.Errorf("failed to push credentials: %w", err)
-	}
-
-	// Fix ownership if running as non-root user
-	if homeDir != "/root" {
-		if err := mgr.Chown(destCredentials, container.CodeUID, container.CodeUID); err != nil {
-			return fmt.Errorf("failed to set credentials ownership: %w", err)
+	// Copy essential config files from host — only those that exist on host
+	for _, filename := range tcf.EssentialConfigFiles() {
+		if hostCLIConfigPath == "" {
+			break
+		}
+		srcPath := filepath.Join(hostCLIConfigPath, filename)
+		if _, err := os.Stat(srcPath); err == nil {
+			destPath := filepath.Join(stateDir, filename)
+			logger(fmt.Sprintf("  - Refreshing %s", filename))
+			if err := mgr.PushFile(srcPath, destPath); err != nil {
+				logger(fmt.Sprintf("  - Warning: Failed to copy %s: %v", filename, err))
+			}
 		}
 	}
 
-	// Get sandbox settings from tool
-	sandboxSettings := t.GetSandboxSettings()
+	// Inject sandbox settings into the tool's sandbox target file
+	sandboxSettings := tcf.GetSandboxSettings()
 	if len(sandboxSettings) > 0 {
-		// Get the state config filename (e.g., ".claude.json" or ".aider.json")
-		stateConfigFilename := fmt.Sprintf(".%s.json", t.Name())
+		sandboxTarget := tcf.SandboxSettingsFileName()
+		settingsPath := filepath.Join(stateDir, sandboxTarget)
+		logger(fmt.Sprintf("Refreshing sandbox settings in %s...", sandboxTarget))
+
+		settingsJSON, err := buildJSONFromSettings(sandboxSettings)
+		if err != nil {
+			logger(fmt.Sprintf("Warning: Failed to build JSON from settings: %v", err))
+		} else {
+			// Check if sandbox target file exists in container
+			checkCmd := fmt.Sprintf("test -f %s && echo exists || echo missing", settingsPath)
+			checkResult, err := mgr.ExecCommand(checkCmd, container.ExecCommandOptions{Capture: true})
+
+			if err != nil || strings.TrimSpace(checkResult) == "missing" {
+				// File doesn't exist, create it with sandbox settings
+				logger(fmt.Sprintf("%s not found in container, creating with sandbox settings", sandboxTarget))
+				settingsBytes, err := json.MarshalIndent(sandboxSettings, "", "  ")
+				if err != nil {
+					logger(fmt.Sprintf("Warning: Failed to marshal sandbox settings: %v", err))
+				} else if err := mgr.CreateFile(settingsPath, string(settingsBytes)+"\n"); err != nil {
+					logger(fmt.Sprintf("Warning: Failed to create %s: %v", sandboxTarget, err))
+				}
+			} else {
+				// File exists, merge sandbox settings into it
+				escapedJSON := strings.ReplaceAll(settingsJSON, "'", "'\"'\"'")
+				injectCmd := fmt.Sprintf(
+					`python3 -c 'import json; f=open("%s","r+"); d=json.load(f); updates=json.loads('"'"'%s'"'"'); [d.setdefault(k,{}).update(v) if isinstance(v,dict) and isinstance(d.get(k),dict) else d.__setitem__(k,v) for k,v in updates.items()]; f.seek(0); json.dump(d,f,indent=2); f.truncate()'`,
+					settingsPath,
+					escapedJSON,
+				)
+				if _, err := mgr.ExecCommand(injectCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+					logger(fmt.Sprintf("Warning: Failed to inject settings into %s: %v", sandboxTarget, err))
+				}
+			}
+		}
+	}
+
+	// Copy and refresh tool state config file (e.g., .claude.json) — only if tool uses one
+	stateConfigFilename := tcf.StateConfigFileName()
+	if stateConfigFilename != "" && hostCLIConfigPath != "" {
 		stateConfigPath := filepath.Join(filepath.Dir(hostCLIConfigPath), stateConfigFilename)
 
 		if _, err := os.Stat(stateConfigPath); err == nil {
@@ -601,14 +619,13 @@ func injectCredentials(mgr *container.Manager, hostCLIConfigPath, homeDir string
 			stateJsonDest := filepath.Join(homeDir, stateConfigFilename)
 			if err := mgr.PushFile(stateConfigPath, stateJsonDest); err != nil {
 				logger(fmt.Sprintf("Warning: Failed to copy %s: %v", stateConfigFilename, err))
-			} else {
-				// Inject sandbox settings using tool's GetSandboxSettings()
+			} else if len(sandboxSettings) > 0 {
+				// Inject sandbox settings into state config too
 				logger(fmt.Sprintf("Injecting sandbox settings into %s...", stateConfigFilename))
 				settingsJSON, err := buildJSONFromSettings(sandboxSettings)
 				if err != nil {
 					logger(fmt.Sprintf("Warning: Failed to build JSON from settings: %v", err))
 				} else {
-					// Properly escape the JSON string for shell command
 					escapedJSON := strings.ReplaceAll(settingsJSON, "'", "'\"'\"'")
 					injectCmd := fmt.Sprintf(
 						`python3 -c 'import json; f=open("%s","r+"); d=json.load(f); updates=json.loads('"'"'%s'"'"'); [d.setdefault(k,{}).update(v) if isinstance(v,dict) and isinstance(d.get(k),dict) else d.__setitem__(k,v) for k,v in updates.items()]; f.seek(0); json.dump(d,f,indent=2); f.truncate()'`,
@@ -619,13 +636,22 @@ func injectCredentials(mgr *container.Manager, hostCLIConfigPath, homeDir string
 						logger(fmt.Sprintf("Warning: Failed to inject settings into %s: %v", stateConfigFilename, err))
 					}
 				}
+			}
+		}
+	}
 
-				// Fix ownership if running as non-root user
-				if homeDir != "/root" {
-					if err := mgr.Chown(stateJsonDest, container.CodeUID, container.CodeUID); err != nil {
-						logger(fmt.Sprintf("Warning: Failed to set %s ownership: %v", stateConfigFilename, err))
-					}
-				}
+	// Fix ownership recursively (matching setupCLIConfig pattern)
+	if homeDir != "/root" {
+		chownCmd := fmt.Sprintf("chown -R %d:%d %s", container.CodeUID, container.CodeUID, stateDir)
+		if _, err := mgr.ExecCommand(chownCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+			logger(fmt.Sprintf("Warning: Failed to set %s directory ownership: %v", configDirName, err))
+		}
+
+		// Also fix state config file ownership if it was copied
+		if stateConfigFilename != "" && hostCLIConfigPath != "" {
+			stateJsonDest := filepath.Join(homeDir, stateConfigFilename)
+			if err := mgr.Chown(stateJsonDest, container.CodeUID, container.CodeUID); err != nil {
+				logger(fmt.Sprintf("Warning: Failed to set %s ownership: %v", stateConfigFilename, err))
 			}
 		}
 	}
@@ -635,8 +661,8 @@ func injectCredentials(mgr *container.Manager, hostCLIConfigPath, homeDir string
 }
 
 // setupCLIConfig copies tool config directory and injects sandbox settings
-func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t tool.Tool, logger func(string)) error {
-	configDirName := t.ConfigDirName()
+func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, tcf tool.ToolWithConfigDirFiles, logger func(string)) error {
+	configDirName := tcf.ConfigDirName()
 	stateDir := filepath.Join(homeDir, configDirName)
 
 	// Create config directory in container
@@ -646,12 +672,8 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 		return fmt.Errorf("failed to create %s directory: %w", configDirName, err)
 	}
 
-	// Copy only essential files from config directory (skip debug logs with permission issues)
-	essentialFiles := []string{
-		".credentials.json",
-		"config.yml",
-		"settings.json",
-	}
+	essentialFiles := tcf.EssentialConfigFiles()
+	sandboxTarget := tcf.SandboxSettingsFileName()
 
 	logger(fmt.Sprintf("Copying essential CLI config files from %s", hostCLIConfigPath))
 	for _, filename := range essentialFiles {
@@ -667,32 +689,32 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 		}
 	}
 
-	// Get sandbox settings from tool and merge into settings.json if needed
-	sandboxSettings := t.GetSandboxSettings()
+	// Get sandbox settings from tool and merge into sandbox target file if needed
+	sandboxSettings := tcf.GetSandboxSettings()
 	if len(sandboxSettings) > 0 {
-		settingsPath := filepath.Join(stateDir, "settings.json")
-		logger("Merging sandbox settings into settings.json...")
+		settingsPath := filepath.Join(stateDir, sandboxTarget)
+		logger(fmt.Sprintf("Merging sandbox settings into %s...", sandboxTarget))
 		settingsJSON, err := buildJSONFromSettings(sandboxSettings)
 		if err != nil {
 			logger(fmt.Sprintf("Warning: Failed to build JSON from settings: %v", err))
 		} else {
-			// Check if settings.json exists in container
+			// Check if sandbox target file exists in container
 			checkCmd := fmt.Sprintf("test -f %s && echo exists || echo missing", settingsPath)
 			checkResult, err := mgr.ExecCommand(checkCmd, container.ExecCommandOptions{Capture: true})
 
 			if err != nil || strings.TrimSpace(checkResult) == "missing" {
 				// File doesn't exist, create it with sandbox settings
-				logger("settings.json not found in container, creating with sandbox settings")
+				logger(fmt.Sprintf("%s not found in container, creating with sandbox settings", sandboxTarget))
 				settingsBytes, err := json.MarshalIndent(sandboxSettings, "", "  ")
 				if err != nil {
 					return fmt.Errorf("failed to marshal sandbox settings: %w", err)
 				}
 				if err := mgr.CreateFile(settingsPath, string(settingsBytes)+"\n"); err != nil {
-					return fmt.Errorf("failed to create settings.json: %w", err)
+					return fmt.Errorf("failed to create %s: %w", sandboxTarget, err)
 				}
 			} else {
 				// File exists, merge sandbox settings into it
-				logger("Merging sandbox settings into existing settings.json")
+				logger(fmt.Sprintf("Merging sandbox settings into existing %s", sandboxTarget))
 				// Properly escape the JSON string for shell command
 				escapedJSON := strings.ReplaceAll(settingsJSON, "'", "'\"'\"'")
 				injectCmd := fmt.Sprintf(
@@ -701,20 +723,31 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 					escapedJSON,
 				)
 				if _, err := mgr.ExecCommand(injectCmd, container.ExecCommandOptions{Capture: true}); err != nil {
-					logger(fmt.Sprintf("Warning: Failed to inject settings into settings.json: %v", err))
+					logger(fmt.Sprintf("Warning: Failed to inject settings into %s: %v", sandboxTarget, err))
 				} else {
-					logger("Successfully merged sandbox settings into settings.json")
+					logger(fmt.Sprintf("Successfully merged sandbox settings into %s", sandboxTarget))
 				}
 			}
 		}
-		logger(fmt.Sprintf("%s config copied and sandbox settings merged into settings.json", t.Name()))
+		logger(fmt.Sprintf("%s config copied and sandbox settings merged into %s", tcf.Name(), sandboxTarget))
 	} else {
-		logger(fmt.Sprintf("%s config copied (no sandbox settings needed)", t.Name()))
+		logger(fmt.Sprintf("%s config copied (no sandbox settings needed)", tcf.Name()))
 	}
 
-	// Copy and modify tool state config file (e.g., .claude.json, .aider.json)
-	// This is a sibling file to the config directory
-	stateConfigFilename := fmt.Sprintf(".%s.json", t.Name())
+	// Copy and modify tool state config file (e.g., .claude.json)
+	// This is a sibling file next to the config directory — only some tools use it
+	stateConfigFilename := tcf.StateConfigFileName()
+	if stateConfigFilename == "" {
+		// Fix ownership of config directory and return
+		if homeDir != "/root" {
+			chownCmd := fmt.Sprintf("chown -R %d:%d %s", container.CodeUID, container.CodeUID, stateDir)
+			if _, err := mgr.ExecCommand(chownCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+				return fmt.Errorf("failed to set %s directory ownership: %w", configDirName, err)
+			}
+		}
+		return nil
+	}
+
 	stateConfigPath := filepath.Join(filepath.Dir(hostCLIConfigPath), stateConfigFilename)
 	logger(fmt.Sprintf("Checking for %s at: %s", stateConfigFilename, stateConfigPath))
 
@@ -752,7 +785,6 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 
 		// Fix ownership if running as non-root user
 		if homeDir != "/root" {
-			logger(fmt.Sprintf("Fixing ownership of %s to %d:%d", stateConfigFilename, container.CodeUID, container.CodeUID))
 			if err := mgr.Chown(stateJsonDest, container.CodeUID, container.CodeUID); err != nil {
 				return fmt.Errorf("failed to set %s ownership: %w", stateConfigFilename, err)
 			}
@@ -802,64 +834,6 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 	}
 
 	return nil
-}
-
-// setupHomeConfigFile handles config injection for tools that use a single
-// home-dir JSON file (e.g., ~/.opencode.json).
-func setupHomeConfigFile(mgr *container.Manager, hostConfigFilePath, homeDir string,
-	twh tool.ToolWithHomeConfigFile, t tool.Tool, logger func(string),
-) {
-	destPath := filepath.Join(homeDir, twh.HomeConfigFileName())
-
-	// Copy host config if it exists
-	if _, err := os.Stat(hostConfigFilePath); err == nil {
-		logger(fmt.Sprintf("Copying %s from host...", twh.HomeConfigFileName()))
-		if err := mgr.PushFile(hostConfigFilePath, destPath); err != nil {
-			logger(fmt.Sprintf("Warning: Failed to copy %s: %v", twh.HomeConfigFileName(), err))
-		}
-	}
-
-	// Inject sandbox settings (merge into existing or create fresh)
-	sandboxSettings := t.GetSandboxSettings()
-	if len(sandboxSettings) > 0 {
-		logger(fmt.Sprintf("Injecting sandbox settings into %s...", twh.HomeConfigFileName()))
-
-		// Check if file exists in container
-		checkCmd := fmt.Sprintf("test -f %s && echo exists || echo missing", destPath)
-		result, _ := mgr.ExecCommand(checkCmd, container.ExecCommandOptions{Capture: true})
-		if strings.TrimSpace(result) == "missing" {
-			// Create fresh config with sandbox settings
-			settingsBytes, err := json.MarshalIndent(sandboxSettings, "", "  ")
-			if err != nil {
-				logger(fmt.Sprintf("Warning: Failed to marshal sandbox settings: %v", err))
-			} else {
-				if err := mgr.CreateFile(destPath, string(settingsBytes)+"\n"); err != nil {
-					logger(fmt.Sprintf("Warning: Failed to create %s: %v", twh.HomeConfigFileName(), err))
-				}
-			}
-		} else {
-			// Merge sandbox settings into existing config
-			settingsJSON, err := buildJSONFromSettings(sandboxSettings)
-			if err != nil {
-				logger(fmt.Sprintf("Warning: Failed to build JSON from settings: %v", err))
-			} else {
-				escapedJSON := strings.ReplaceAll(settingsJSON, "'", "'\"'\"'")
-				mergeCmd := fmt.Sprintf(
-					`python3 -c 'import json; f=open("%s","r+"); d=json.load(f); updates=json.loads('"'"'%s'"'"'); [d.setdefault(k,{}).update(v) if isinstance(v,dict) and isinstance(d.get(k),dict) else d.__setitem__(k,v) for k,v in updates.items()]; f.seek(0); json.dump(d,f,indent=2); f.truncate()'`,
-					destPath, escapedJSON)
-				if _, err := mgr.ExecCommand(mergeCmd, container.ExecCommandOptions{Capture: true}); err != nil {
-					logger(fmt.Sprintf("Warning: Failed to inject settings into %s: %v", twh.HomeConfigFileName(), err))
-				}
-			}
-		}
-
-		// Fix ownership
-		if homeDir != "/root" {
-			if err := mgr.Chown(destPath, container.CodeUID, container.CodeUID); err != nil {
-				logger(fmt.Sprintf("Warning: Failed to set %s ownership: %v", twh.HomeConfigFileName(), err))
-			}
-		}
-	}
 }
 
 // hasLimits checks if any limits are configured

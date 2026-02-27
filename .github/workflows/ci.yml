@@ -364,7 +364,19 @@ jobs:
         if: steps.cache-coi-image.outputs.cache-hit != 'true'
         run: |
           echo "Building COI image (not cached)..."
-          ./coi build
+          for attempt in 1 2 3; do
+            echo "Attempt $attempt of 3..."
+            if ./coi build; then
+              echo "Image built successfully on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Failed to build COI image after 3 attempts"
+              exit 1
+            fi
+            echo "Build failed, retrying in 10s..."
+            sleep 10
+          done
           ./coi images
           # Export image for caching
           incus image export coi /tmp/coi-image
