@@ -10,6 +10,8 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **Container user UID/GID remapping for non-default code_uid** - When `code_uid` is set to a value other than 1000, COI now remaps the container user's UID/GID to match. Previously, the container user stayed at UID 1000 (baked into the image), causing "Permission denied" on `.bashrc`, "I have no name!" prompts, and group lookup failures. Fixes #166.
+
 - [Bug Fix] **Resume path now uses ToolWithConfigDirFiles interface** - Fixed `injectCredentials()` hardcoding Claude-specific assumptions (requiring `.credentials.json` and using `.${tool}.json` state filename). The resume path now uses `EssentialConfigFiles()`, `StateConfigFileName()`, and `SandboxSettingsFileName()` from the interface, so tools like opencode that don't use credential files can resume without errors.
 
 - [Bug Fix] **opencode global config now uses correct XDG location** - Fixed opencode configuration being placed at `~/.opencode.json` (old format) instead of `~/.config/opencode/opencode.json` (current XDG-standard location). The sandbox permission bypass and user's global config are now correctly injected. Also copies `tui.json` when present. Fixes #158.
