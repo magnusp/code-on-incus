@@ -646,9 +646,7 @@ class TestNFTRuleCleanupOnKill:
                     break
                 time.sleep(1)
 
-            assert nft_ready, (
-                f"NFT rules should exist for {container_ip} before kill"
-            )
+            assert nft_ready, f"NFT rules should exist for {container_ip} before kill"
 
             # Kill using coi kill command
             kill_result = subprocess.run(
@@ -712,9 +710,7 @@ class TestNFTRuleCleanupOnKill:
                     break
                 time.sleep(1)
 
-            assert nft_ready, (
-                f"NFT rules should exist for {container_ip} before auto-kill"
-            )
+            assert nft_ready, f"NFT rules should exist for {container_ip} before auto-kill"
 
             # Trigger auto-kill by accessing metadata endpoint (CRITICAL threat)
             subprocess.run(
