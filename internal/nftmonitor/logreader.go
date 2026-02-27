@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -17,11 +18,12 @@ import (
 
 // LogReader reads and parses nftables logs from journald
 type LogReader struct {
-	config      *Config
-	journal     *JournalReader
-	eventChan   chan *NetworkEvent
-	journalChan chan string
-	closeOnce   sync.Once
+	config        *Config
+	journal       *JournalReader
+	eventChan     chan *NetworkEvent
+	journalChan   chan string
+	closeOnce     sync.Once
+	droppedEvents atomic.Int64
 }
 
 // NewLogReader creates a new log reader
@@ -34,8 +36,8 @@ func NewLogReader(cfg *Config) (*LogReader, error) {
 	return &LogReader{
 		config:      cfg,
 		journal:     journal,
-		eventChan:   make(chan *NetworkEvent, 100),
-		journalChan: make(chan string, 100),
+		eventChan:   make(chan *NetworkEvent, 1000),
+		journalChan: make(chan string, 1000),
 	}, nil
 }
 
@@ -74,8 +76,13 @@ func (lr *LogReader) Start(ctx context.Context) error {
 					case <-ctx.Done():
 						return ctx.Err()
 					default:
-						debugf("Event channel full, dropping event")
-						// Channel full, skip
+						count := lr.droppedEvents.Add(1)
+						debugf("Event channel full, dropping event (total dropped: %d)", count)
+						if count == 1 || count%100 == 0 {
+							if lr.config.OnError != nil {
+								lr.config.OnError(fmt.Errorf("NFT event channel full: %d events dropped", count))
+							}
+						}
 					}
 				} else {
 					debugf("Event IP mismatch: event.ContainerIP=%s event.SrcIP=%s config.ContainerIP=%s",
