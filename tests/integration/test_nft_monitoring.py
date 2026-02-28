@@ -423,12 +423,16 @@ class TestNetworkThreatDetection:
                 timeout=10,
             )
 
-            # Wait for kill action
-            time.sleep(8)
+            # Wait for kill action with retry loop
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed or stopped
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
+            assert killed, (
                 f"Container should have been killed but state is {state}"
             )
 
@@ -729,11 +733,15 @@ class TestNFTRuleCleanupOnKill:
             )
 
             # Wait for responder to detect threat and kill container
-            time.sleep(10)
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
+            assert killed, (
                 f"Container should have been killed but state is {state}"
             )
 
@@ -895,11 +903,15 @@ class TestFirewallRuleCleanupOnAutoKill:
             )
 
             # Wait for responder to detect threat and kill container
-            time.sleep(10)
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
+            assert killed, (
                 f"Container should have been killed but state is {state}"
             )
 

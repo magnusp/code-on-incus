@@ -215,11 +215,12 @@ class TestThreatDetection:
         )
 
         # Wait for monitoring to detect and kill
-        max_wait = 15
-        for _ in range(max_wait):
+        killed = False
+        for _ in range(15):
             time.sleep(1)
             state = get_container_state(container_name)
             if state in ["Stopped", "Frozen", "Unknown"]:
+                killed = True
                 break
 
         # Close stderr file and print contents for debugging (before assertions)
@@ -233,12 +234,7 @@ class TestThreatDetection:
         print("=== End Debug Log ===\n")
 
         # Verify container was killed
-        final_state = get_container_state(container_name)
-        assert final_state in [
-            "Stopped",
-            "Frozen",
-            "Unknown",  # Container deleted after critical threat
-        ], f"Expected container killed, got {final_state}"
+        assert killed, f"Expected container killed, got {state}"
 
         # Verify threat event logged
         events = get_threat_events(container_name)
