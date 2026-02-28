@@ -432,9 +432,7 @@ class TestNetworkThreatDetection:
                     killed = True
                     break
 
-            assert killed, (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
         finally:
             proc.terminate()
@@ -741,9 +739,7 @@ class TestNFTRuleCleanupOnKill:
                     killed = True
                     break
 
-            assert killed, (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
             # Verify NFT rules are cleaned up
             assert not check_nft_rules_exist(container_ip), (
@@ -911,9 +907,7 @@ class TestFirewallRuleCleanupOnAutoKill:
                     killed = True
                     break
 
-            assert killed, (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
             # Verify firewall rules are cleaned up
             assert not check_firewall_rules_exist(container_ip), (
