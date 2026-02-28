@@ -14,6 +14,8 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **Fix double-cleanup race condition in shell signal handler** - When a signal (e.g., SIGINT/SIGTERM) arrived while `shellCommand` was already returning normally, both the `defer` and the signal handler goroutine could call `doCleanup()` concurrently — stopping monitoring daemons twice and running session cleanup twice. Wrapped `doCleanup` in `sync.Once` to ensure cleanup executes exactly once regardless of which path triggers first. Includes integration test.
+
 - [Bug Fix] **Container user UID/GID remapping for non-default code_uid** - When `code_uid` is set to a value other than 1000, COI now remaps the container user's UID/GID to match. Previously, the container user stayed at UID 1000 (baked into the image), causing "Permission denied" on `.bashrc`, "I have no name!" prompts, and group lookup failures. Fixes #166.
 
 - [Bug Fix] **Resume path now uses ToolWithConfigDirFiles interface** - Fixed `injectCredentials()` hardcoding Claude-specific assumptions (requiring `.credentials.json` and using `.${tool}.json` state filename). The resume path now uses `EssentialConfigFiles()`, `StateConfigFileName()`, and `SandboxSettingsFileName()` from the interface, so tools like opencode that don't use credential files can resume without errors.
