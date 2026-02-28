@@ -83,6 +83,6 @@ def test_signal_cleanup_runs_once(coi_binary, cleanup_containers, workspace_dir)
         f"but appeared {cleanup_count} times. Output:\n{output}"
     )
 
-    # Verify container is deleted
-    container_deleted = wait_for_specific_container_deletion(container_name, timeout=60)
+    # Verify container is deleted (90s to account for network teardown on CI)
+    container_deleted = wait_for_specific_container_deletion(container_name, timeout=90)
     assert container_deleted, f"Container {container_name} should be deleted after signal cleanup"
