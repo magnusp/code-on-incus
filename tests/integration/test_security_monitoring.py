@@ -188,16 +188,21 @@ class TestThreatDetection:
             stderr=stderr_fd,  # Capture stderr for debugging
         )
 
-        # Wait for container to be created
-        time.sleep(8)
-
+        # Wait for container to be created and running (may take longer on first run
+        # when the image is not yet cached)
         container_name = get_container_name_from_workspace(test_workspace)
+        ready = False
+        for _ in range(30):
+            time.sleep(1)
+            state = get_container_state(container_name)
+            if state == "Running":
+                ready = True
+                break
 
-        # Verify container exists and is running
-        state = get_container_state(container_name)
-        if state == "Unknown":
+        if not ready:
             proc.terminate()
-            pytest.skip(f"Container {container_name} not found")
+            stderr_fd.close()
+            pytest.skip(f"Container {container_name} not ready, state: {state}")
 
         # Inject malicious command (simulate reverse shell)
         subprocess.Popen(
@@ -215,11 +220,12 @@ class TestThreatDetection:
         )
 
         # Wait for monitoring to detect and kill
-        max_wait = 15
-        for _ in range(max_wait):
+        killed = False
+        for _ in range(15):
             time.sleep(1)
             state = get_container_state(container_name)
             if state in ["Stopped", "Frozen", "Unknown"]:
+                killed = True
                 break
 
         # Close stderr file and print contents for debugging (before assertions)
@@ -233,12 +239,7 @@ class TestThreatDetection:
         print("=== End Debug Log ===\n")
 
         # Verify container was killed
-        final_state = get_container_state(container_name)
-        assert final_state in [
-            "Stopped",
-            "Frozen",
-            "Unknown",  # Container deleted after critical threat
-        ], f"Expected container killed, got {final_state}"
+        assert killed, f"Expected container killed, got {state}"
 
         # Verify threat event logged
         events = get_threat_events(container_name)

@@ -423,14 +423,16 @@ class TestNetworkThreatDetection:
                 timeout=10,
             )
 
-            # Wait for kill action
-            time.sleep(8)
+            # Wait for kill action with retry loop
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed or stopped
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
         finally:
             proc.terminate()
@@ -729,18 +731,25 @@ class TestNFTRuleCleanupOnKill:
             )
 
             # Wait for responder to detect threat and kill container
-            time.sleep(10)
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
-            # Verify NFT rules are cleaned up
-            assert not check_nft_rules_exist(container_ip), (
-                f"NFT rules should be cleaned up for {container_ip} after auto-kill"
-            )
+            # Verify NFT rules are cleaned up (may take a moment after kill)
+            cleaned = False
+            for _ in range(15):
+                if not check_nft_rules_exist(container_ip):
+                    cleaned = True
+                    break
+                time.sleep(1)
+
+            assert cleaned, f"NFT rules should be cleaned up for {container_ip} after auto-kill"
 
         finally:
             proc.terminate()
@@ -895,16 +904,25 @@ class TestFirewallRuleCleanupOnAutoKill:
             )
 
             # Wait for responder to detect threat and kill container
-            time.sleep(10)
+            killed = False
+            for _ in range(15):
+                time.sleep(1)
+                state = get_container_state(container_name)
+                if state in ("Stopped", "Unknown"):
+                    killed = True
+                    break
 
-            # Verify container was killed
-            state = get_container_state(container_name)
-            assert state in ("Stopped", "Unknown"), (
-                f"Container should have been killed but state is {state}"
-            )
+            assert killed, f"Container should have been killed but state is {state}"
 
-            # Verify firewall rules are cleaned up
-            assert not check_firewall_rules_exist(container_ip), (
+            # Verify firewall rules are cleaned up (may take a moment after kill)
+            cleaned = False
+            for _ in range(15):
+                if not check_firewall_rules_exist(container_ip):
+                    cleaned = True
+                    break
+                time.sleep(1)
+
+            assert cleaned, (
                 f"Firewall rules should be cleaned up for {container_ip} after auto-kill"
             )
 
