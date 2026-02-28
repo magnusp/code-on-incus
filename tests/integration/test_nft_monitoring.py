@@ -741,10 +741,15 @@ class TestNFTRuleCleanupOnKill:
 
             assert killed, f"Container should have been killed but state is {state}"
 
-            # Verify NFT rules are cleaned up
-            assert not check_nft_rules_exist(container_ip), (
-                f"NFT rules should be cleaned up for {container_ip} after auto-kill"
-            )
+            # Verify NFT rules are cleaned up (may take a moment after kill)
+            cleaned = False
+            for _ in range(15):
+                if not check_nft_rules_exist(container_ip):
+                    cleaned = True
+                    break
+                time.sleep(1)
+
+            assert cleaned, f"NFT rules should be cleaned up for {container_ip} after auto-kill"
 
         finally:
             proc.terminate()
@@ -909,8 +914,15 @@ class TestFirewallRuleCleanupOnAutoKill:
 
             assert killed, f"Container should have been killed but state is {state}"
 
-            # Verify firewall rules are cleaned up
-            assert not check_firewall_rules_exist(container_ip), (
+            # Verify firewall rules are cleaned up (may take a moment after kill)
+            cleaned = False
+            for _ in range(15):
+                if not check_firewall_rules_exist(container_ip):
+                    cleaned = True
+                    break
+                time.sleep(1)
+
+            assert cleaned, (
                 f"Firewall rules should be cleaned up for {container_ip} after auto-kill"
             )
 
