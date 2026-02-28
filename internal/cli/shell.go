@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -295,41 +296,46 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Define cleanup function so it can be called from both defer and signal handler
-	// Note: os.Exit() does NOT run deferred functions, so we must call cleanup explicitly
+	// Define cleanup function so it can be called from both defer and signal handler.
+	// sync.Once ensures cleanup runs exactly once even if both paths trigger concurrently
+	// (e.g., signal arrives while the function is already returning normally).
+	// Note: os.Exit() does NOT run deferred functions, so we must call cleanup explicitly.
+	var cleanupOnce sync.Once
 	doCleanup := func() {
-		fmt.Fprintf(os.Stderr, "\nCleaning up session...\n")
+		cleanupOnce.Do(func() {
+			fmt.Fprintf(os.Stderr, "\nCleaning up session...\n")
 
-		// Stop monitoring daemons if they were started
-		if monitorDaemon != nil {
-			if err := monitorDaemon.Stop(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to stop monitoring daemon: %v\n", err)
+			// Stop monitoring daemons if they were started
+			if monitorDaemon != nil {
+				if err := monitorDaemon.Stop(); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Failed to stop monitoring daemon: %v\n", err)
+				}
 			}
-		}
-		if nftDaemon != nil {
-			if err := nftDaemon.Stop(); err != nil {
-				fmt.Fprintf(os.Stderr, "Warning: Failed to stop NFT monitoring: %v\n", err)
+			if nftDaemon != nil {
+				if err := nftDaemon.Stop(); err != nil {
+					fmt.Fprintf(os.Stderr, "Warning: Failed to stop NFT monitoring: %v\n", err)
+				}
 			}
-		}
 
-		// Stop timeout monitor if it was started
-		if result.TimeoutMonitor != nil {
-			result.TimeoutMonitor.Stop()
-		}
+			// Stop timeout monitor if it was started
+			if result.TimeoutMonitor != nil {
+				result.TimeoutMonitor.Stop()
+			}
 
-		cleanupOpts := session.CleanupOptions{
-			ContainerName:  result.ContainerName,
-			SessionID:      sessionID,
-			Persistent:     persistent,
-			SessionsDir:    sessionsDir,
-			SaveSession:    true, // Always save session data
-			Workspace:      absWorkspace,
-			Tool:           toolInstance,
-			NetworkManager: result.NetworkManager,
-		}
-		if err := session.Cleanup(cleanupOpts); err != nil {
-			fmt.Fprintf(os.Stderr, "Cleanup error: %v\n", err)
-		}
+			cleanupOpts := session.CleanupOptions{
+				ContainerName:  result.ContainerName,
+				SessionID:      sessionID,
+				Persistent:     persistent,
+				SessionsDir:    sessionsDir,
+				SaveSession:    true, // Always save session data
+				Workspace:      absWorkspace,
+				Tool:           toolInstance,
+				NetworkManager: result.NetworkManager,
+			}
+			if err := session.Cleanup(cleanupOpts); err != nil {
+				fmt.Fprintf(os.Stderr, "Cleanup error: %v\n", err)
+			}
+		})
 	}
 
 	// Setup cleanup on exit (for normal return paths)
