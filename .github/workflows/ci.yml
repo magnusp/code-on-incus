@@ -172,8 +172,19 @@ jobs:
           Signed-By: /etc/apt/keyrings/zabbly.asc
           SOURCES'
 
-          sudo apt-get update
-          sudo apt-get install -y incus firewalld
+          for attempt in 1 2 3; do
+            sudo apt-get update
+            if sudo apt-get install -y incus firewalld; then
+              echo "Packages installed successfully on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "Failed to install packages after 3 attempts"
+              exit 1
+            fi
+            echo "Install failed (attempt $attempt/3), retrying in 15s..."
+            sleep 15
+          done
 
       - name: Configure Firewalld for network isolation tests
         run: |
@@ -287,7 +298,18 @@ jobs:
         run: |
           # Pre-download the base image to speed up builds
           echo "Pre-caching Ubuntu 22.04 base image..."
-          incus image copy images:ubuntu/22.04 local: --alias ubuntu-22.04 --auto-update=false || true
+          for attempt in 1 2 3; do
+            if incus image copy images:ubuntu/22.04 local: --alias ubuntu-22.04 --auto-update=false; then
+              echo "Image cached successfully on attempt $attempt"
+              break
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "WARNING: Failed to cache image after 3 attempts, continuing anyway..."
+            else
+              echo "Image cache failed (attempt $attempt/3), retrying in 15s..."
+              sleep 15
+            fi
+          done
           incus image list
 
       - name: Build COI binary
@@ -315,8 +337,8 @@ jobs:
           mkdir -p /tmp/test-bind-mount
           echo "test-content" > /tmp/test-bind-mount/test-file.txt
 
-          # Launch test container
-          incus launch images:ubuntu/22.04 test-bind-mount-container
+          # Launch test container (use local alias to avoid external network dependency)
+          incus launch ubuntu-22.04 test-bind-mount-container
           sleep 5
 
           # Add bind mount with shift=true
