@@ -160,35 +160,33 @@ jobs:
       - name: Install Incus and Firewalld
         run: |
           # Try Zabbly repo first (latest Incus), fall back to Ubuntu's native package
-          ZABBLY_OK=false
           sudo mkdir -p /etc/apt/keyrings/
-          for attempt in 1 2 3; do
-            if sudo curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 5 https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc; then
-              echo "Zabbly key downloaded on attempt $attempt"
-              ZABBLY_OK=true
-              break
-            fi
-            echo "Key download failed (attempt $attempt/3), retrying in 10s..."
-            sleep 10
-          done
+          ZABBLY_SOURCES=/etc/apt/sources.list.d/zabbly-incus-stable.sources
 
-          if [ "$ZABBLY_OK" = true ]; then
-            sudo sh -c 'cat <<SOURCES > /etc/apt/sources.list.d/zabbly-incus-stable.sources
+          # Attempt to set up Zabbly repo
+          if sudo curl -fsSL --connect-timeout 10 --retry 2 --retry-delay 5 https://pkgs.zabbly.com/key.asc -o /etc/apt/keyrings/zabbly.asc 2>/dev/null; then
+            sudo sh -c "cat <<SOURCES > $ZABBLY_SOURCES
           Enabled: yes
           Types: deb
           URIs: https://pkgs.zabbly.com/incus/stable
-          Suites: $(. /etc/os-release && echo ${VERSION_CODENAME})
+          Suites: \$(. /etc/os-release && echo \${VERSION_CODENAME})
           Components: main
-          Architectures: $(dpkg --print-architecture)
+          Architectures: \$(dpkg --print-architecture)
           Signed-By: /etc/apt/keyrings/zabbly.asc
-          SOURCES'
-            echo "Zabbly repo configured, installing latest Incus..."
+          SOURCES"
+            echo "Zabbly repo configured"
           else
-            echo "WARNING: Zabbly repo unreachable, falling back to Ubuntu's native Incus package"
+            echo "WARNING: Zabbly repo unreachable"
           fi
 
+          # Install with fallback: try with Zabbly, if it fails remove Zabbly and use Ubuntu native
           sudo apt-get update
-          sudo apt-get install -y incus firewalld
+          if ! sudo apt-get install -y incus firewalld; then
+            echo "WARNING: Install failed, removing Zabbly repo and falling back to Ubuntu native Incus"
+            sudo rm -f "$ZABBLY_SOURCES"
+            sudo apt-get update
+            sudo apt-get install -y incus firewalld
+          fi
           incus version || incus --version || true
 
       - name: Configure Firewalld for network isolation tests
