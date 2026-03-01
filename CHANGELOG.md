@@ -123,13 +123,6 @@
 - [Documentation] **File transfer operations** - Documented existing `coi file push` and `coi file pull` commands in README. These commands have been available since early releases for transferring files and directories between host and containers, supporting recursive operations with the `-r` flag. Includes 16 integration tests covering various scenarios. See [File Transfer wiki page](https://github.com/mensfeld/code-on-incus/wiki/File-Transfer) for detailed usage examples.
 - [Documentation] **nftables monitoring setup** - Added comprehensive documentation for nftables-based network monitoring including system requirements, setup instructions, configuration options, and verification steps. Includes inline examples in README for installing dependencies (libsystemd-dev, nftables), configuring group membership and passwordless sudo, and verifying the setup with `coi health`. Documents the architecture, threat detection capabilities, and audit logging format.
 
-### CI/CD Improvements
-
-- [CI/CD] **Zabbly package install fallback to Ubuntu native Incus** - CI no longer fails when `pkgs.zabbly.com` is unreachable or its packages can't be downloaded. If the Zabbly repo install fails, the CI automatically removes the Zabbly sources and falls back to Ubuntu 24.04's native `incus` package. This eliminates CI being blocked by third-party infrastructure outages.
-- [CI/CD] **Base Ubuntu image caching** - The `ubuntu-22.04` base image used for bind mount tests and COI image builds is now cached in GitHub Actions cache (same pattern as the COI image). Subsequent CI runs restore from cache without any dependency on `images.linuxcontainers.org`.
-- [CI/CD] **Bind mount test made non-blocking** - The bind mount functionality test step now uses `continue-on-error: true` and skips gracefully when the base image is unavailable. This diagnostic step no longer gates the actual test suite.
-- [CI/CD] **NFT rule assertion stabilized** - Replaced fixed `sleep(10)` followed by immediate assertion with a polling loop (up to 30s, 2s intervals) for NFT rules to appear, fixing intermittent `test_nft_rules_cleaned_on_coi_shutdown` and `test_rules_cleanup_on_session_end` failures caused by variable monitoring daemon startup time.
-
 ## 0.6.0 (2026-02-02)
 
 ### Bug Fixes
