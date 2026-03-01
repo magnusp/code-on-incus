@@ -811,9 +811,7 @@ class TestNFTRuleCleanupOnShutdown:
                     nft_ready = True
                     break
                 time.sleep(2)
-            assert nft_ready, (
-                f"NFT rules should exist for {container_ip} before shutdown"
-            )
+            assert nft_ready, f"NFT rules should exist for {container_ip} before shutdown"
 
             # Shutdown using coi shutdown command
             shutdown_result = subprocess.run(
