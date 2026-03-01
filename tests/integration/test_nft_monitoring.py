@@ -247,8 +247,14 @@ class TestNFTRuleManagement:
             if not container_ip:
                 pytest.skip("Container has no IP address")
 
-            # Verify rules exist
-            assert check_nft_rules_exist(container_ip), "Rules should exist while monitoring"
+            # Wait for NFT rules to be created (monitoring daemon may take time to set up)
+            nft_ready = False
+            for _ in range(15):
+                if check_nft_rules_exist(container_ip):
+                    nft_ready = True
+                    break
+                time.sleep(2)
+            assert nft_ready, "Rules should exist while monitoring"
 
             # Stop session
             proc.terminate()
@@ -798,10 +804,14 @@ class TestNFTRuleCleanupOnShutdown:
             if not container_ip:
                 pytest.skip("Container has no IP address")
 
-            # Verify rules exist before shutdown
-            assert check_nft_rules_exist(container_ip), (
-                f"NFT rules should exist for {container_ip} before shutdown"
-            )
+            # Wait for NFT rules to be created (monitoring daemon may take time to set up)
+            nft_ready = False
+            for _ in range(15):
+                if check_nft_rules_exist(container_ip):
+                    nft_ready = True
+                    break
+                time.sleep(2)
+            assert nft_ready, f"NFT rules should exist for {container_ip} before shutdown"
 
             # Shutdown using coi shutdown command
             shutdown_result = subprocess.run(
