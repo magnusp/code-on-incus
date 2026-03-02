@@ -35,7 +35,7 @@ func (nd *NetworkDetector) Analyze(event *NetworkEvent) *ThreatEvent {
 	nd.mu.Unlock()
 
 	// 1. RFC1918 addresses (should be blocked by firewall)
-	if isRFC1918(event.DstIP) {
+	if isRFC1918(event.DstIP) && event.DstIP != nd.config.GatewayIP {
 		return &ThreatEvent{
 			Timestamp:   event.Timestamp,
 			Level:       ThreatLevelHigh,
