@@ -137,6 +137,48 @@ func TestOpencodeTool_RegistryLookup(t *testing.T) {
 	}
 }
 
+func TestOpencodeTool_ImplementsPermissionMode(t *testing.T) {
+	oc := NewOpencode()
+
+	twpm, ok := oc.(ToolWithPermissionMode)
+	if !ok {
+		t.Fatal("OpencodeTool should implement ToolWithPermissionMode")
+	}
+
+	// Verify method works without panic
+	twpm.SetPermissionMode("interactive")
+}
+
+func TestOpencodeTool_GetSandboxSettings_InteractiveMode(t *testing.T) {
+	oc := &OpencodeTool{permissionMode: "interactive"}
+	settings := oc.GetSandboxSettings()
+
+	if len(settings) != 0 {
+		t.Errorf("Expected empty map in interactive mode, got %v", settings)
+	}
+}
+
+func TestOpencodeTool_GetSandboxSettings_BypassDefault(t *testing.T) {
+	oc := &OpencodeTool{} // Empty permissionMode = default bypass
+	settings := oc.GetSandboxSettings()
+
+	perm, ok := settings["permission"]
+	if !ok {
+		t.Fatal("GetSandboxSettings() missing 'permission' key in bypass mode")
+	}
+	permMap, ok := perm.(map[string]interface{})
+	if !ok {
+		t.Fatalf("'permission' value is %T, want map[string]interface{}", perm)
+	}
+	val, ok := permMap["*"]
+	if !ok {
+		t.Fatal("permission map missing '*' key")
+	}
+	if val != "allow" {
+		t.Errorf("permission['*'] = %q, want %q", val, "allow")
+	}
+}
+
 func TestListSupported_IncludesOpencode(t *testing.T) {
 	supported := ListSupported()
 	found := false

@@ -308,6 +308,152 @@ func TestRegistryGetDefault(t *testing.T) {
 	}
 }
 
+func TestClaudeSetPermissionMode_Interface(t *testing.T) {
+	tool := NewClaude()
+
+	// Verify ClaudeTool implements ToolWithPermissionMode
+	twpm, ok := tool.(ToolWithPermissionMode)
+	if !ok {
+		t.Fatal("Claude tool should implement ToolWithPermissionMode")
+	}
+
+	// Verify the method works without panic
+	twpm.SetPermissionMode("interactive")
+}
+
+func TestClaudeBuildCommand_InteractiveMode(t *testing.T) {
+	ct := &ClaudeTool{permissionMode: "interactive"}
+	sessionID := "test-session-123"
+
+	cmd := ct.BuildCommand(sessionID, false, "")
+
+	// Should have --verbose and --session-id but NOT --permission-mode/bypassPermissions
+	if !contains(cmd, "--verbose") {
+		t.Error("Expected command to contain '--verbose'")
+	}
+	if !contains(cmd, "--session-id") {
+		t.Error("Expected command to contain '--session-id'")
+	}
+	if !contains(cmd, sessionID) {
+		t.Errorf("Expected command to contain '%s'", sessionID)
+	}
+	if contains(cmd, "--permission-mode") {
+		t.Error("Expected command NOT to contain '--permission-mode' in interactive mode")
+	}
+	if contains(cmd, "bypassPermissions") {
+		t.Error("Expected command NOT to contain 'bypassPermissions' in interactive mode")
+	}
+}
+
+func TestClaudeBuildCommand_BypassModeExplicit(t *testing.T) {
+	ct := &ClaudeTool{permissionMode: "bypass"}
+	sessionID := "test-session-123"
+
+	cmd := ct.BuildCommand(sessionID, false, "")
+
+	// Explicit "bypass" should behave like default (include --permission-mode bypassPermissions)
+	if !contains(cmd, "--permission-mode") {
+		t.Error("Expected command to contain '--permission-mode' in bypass mode")
+	}
+	if !contains(cmd, "bypassPermissions") {
+		t.Error("Expected command to contain 'bypassPermissions' in bypass mode")
+	}
+}
+
+func TestClaudeGetSandboxSettings_InteractiveMode(t *testing.T) {
+	ct := &ClaudeTool{permissionMode: "interactive"}
+
+	settings := ct.GetSandboxSettings()
+
+	// Should NOT have bypass permission keys
+	if _, ok := settings["allowDangerouslySkipPermissions"]; ok {
+		t.Error("Expected no 'allowDangerouslySkipPermissions' key in interactive mode")
+	}
+	if _, ok := settings["bypassPermissionsModeAccepted"]; ok {
+		t.Error("Expected no 'bypassPermissionsModeAccepted' key in interactive mode")
+	}
+	if _, ok := settings["permissions"]; ok {
+		t.Error("Expected no 'permissions' key in interactive mode")
+	}
+
+	// Should still have effort level keys
+	if settings["effortLevel"] != "medium" {
+		t.Errorf("Expected effortLevel 'medium', got '%v'", settings["effortLevel"])
+	}
+	if settings["effortLevelAccepted"] != true {
+		t.Error("Expected effortLevelAccepted to be true")
+	}
+	if settings["hasSeenEffortPrompt"] != true {
+		t.Error("Expected hasSeenEffortPrompt to be true")
+	}
+	if settings["effortCalloutDismissed"] != true {
+		t.Error("Expected effortCalloutDismissed to be true")
+	}
+
+	env, ok := settings["env"].(map[string]string)
+	if !ok {
+		t.Fatal("Expected env to be map[string]string")
+	}
+	if env["CLAUDE_CODE_EFFORT_LEVEL"] != "medium" {
+		t.Errorf("Expected CLAUDE_CODE_EFFORT_LEVEL 'medium', got '%s'", env["CLAUDE_CODE_EFFORT_LEVEL"])
+	}
+}
+
+func TestClaudeGetSandboxSettings_BypassModeDefault(t *testing.T) {
+	ct := &ClaudeTool{} // Empty permissionMode = default bypass
+
+	settings := ct.GetSandboxSettings()
+
+	// Should have bypass permission keys (default behavior)
+	if settings["allowDangerouslySkipPermissions"] != true {
+		t.Error("Expected allowDangerouslySkipPermissions to be true")
+	}
+	if settings["bypassPermissionsModeAccepted"] != true {
+		t.Error("Expected bypassPermissionsModeAccepted to be true")
+	}
+
+	permissions, ok := settings["permissions"].(map[string]string)
+	if !ok {
+		t.Fatal("Expected permissions to be map[string]string")
+	}
+	if permissions["defaultMode"] != "bypassPermissions" {
+		t.Errorf("Expected defaultMode 'bypassPermissions', got '%s'", permissions["defaultMode"])
+	}
+
+	// Should also have effort level keys
+	if settings["effortLevel"] != "medium" {
+		t.Errorf("Expected effortLevel 'medium', got '%v'", settings["effortLevel"])
+	}
+}
+
+func TestClaudeBuildCommand_ResumeInteractiveMode(t *testing.T) {
+	ct := &ClaudeTool{permissionMode: "interactive"}
+	resumeSessionID := "cli-session-456"
+
+	cmd := ct.BuildCommand("", true, resumeSessionID)
+
+	// Should have --resume with session ID
+	if !contains(cmd, "--resume") {
+		t.Error("Expected command to contain '--resume'")
+	}
+	if !contains(cmd, resumeSessionID) {
+		t.Errorf("Expected command to contain '%s'", resumeSessionID)
+	}
+
+	// Should NOT have permission flags
+	if contains(cmd, "--permission-mode") {
+		t.Error("Expected command NOT to contain '--permission-mode' in interactive mode")
+	}
+	if contains(cmd, "bypassPermissions") {
+		t.Error("Expected command NOT to contain 'bypassPermissions' in interactive mode")
+	}
+
+	// Should still have --verbose
+	if !contains(cmd, "--verbose") {
+		t.Error("Expected command to contain '--verbose'")
+	}
+}
+
 // Helper functions
 
 func contains(slice []string, item string) bool {

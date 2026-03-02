@@ -452,6 +452,13 @@ func getConfiguredTool(cfg *config.Config) (tool.Tool, error) {
 		}
 	}
 
+	// Set permission mode if the tool supports it
+	if twpm, ok := t.(tool.ToolWithPermissionMode); ok {
+		if cfg.Tool.PermissionMode != "" {
+			twpm.SetPermissionMode(cfg.Tool.PermissionMode)
+		}
+	}
+
 	return t, nil
 }
 
