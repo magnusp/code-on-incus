@@ -299,6 +299,69 @@ func TestNetworkDetector_NoFalsePositives(t *testing.T) {
 	}
 }
 
+func TestNetworkDetector_GatewayNotFalsePositive(t *testing.T) {
+	cfg := &Config{
+		ContainerIP: "10.47.62.50",
+		GatewayIP:   "10.47.62.1", // RFC1918 gateway
+	}
+	nd := NewNetworkDetector(cfg)
+
+	// Traffic to gateway should NOT trigger RFC1918 alert
+	event := &NetworkEvent{
+		Timestamp:   time.Now(),
+		ContainerIP: "10.47.62.50",
+		SrcIP:       "10.47.62.50",
+		DstIP:       "10.47.62.1", // Same as gateway
+		DstPort:     80,
+		Protocol:    "TCP",
+	}
+
+	threat := nd.Analyze(event)
+	if threat != nil && threat.Title == "Connection to private network" {
+		t.Errorf("Gateway IP should not trigger RFC1918 alert, got: %q", threat.Title)
+	}
+}
+
+func TestNetworkDetector_RFC1918StillAlertsWithGateway(t *testing.T) {
+	cfg := &Config{
+		ContainerIP: "10.47.62.50",
+		GatewayIP:   "10.47.62.1", // Gateway is set
+	}
+	nd := NewNetworkDetector(cfg)
+
+	// Non-gateway RFC1918 addresses should still trigger alert
+	tests := []struct {
+		name  string
+		dstIP string
+	}{
+		{"Different 10.x address", "10.0.0.1"},
+		{"172.16 address", "172.16.0.1"},
+		{"192.168 address", "192.168.1.1"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			event := &NetworkEvent{
+				Timestamp:   time.Now(),
+				ContainerIP: "10.47.62.50",
+				SrcIP:       "10.47.62.50",
+				DstIP:       tt.dstIP,
+				DstPort:     80,
+				Protocol:    "TCP",
+			}
+
+			threat := nd.Analyze(event)
+			if threat == nil {
+				t.Errorf("Expected RFC1918 alert for %s (not gateway), got nil", tt.dstIP)
+				return
+			}
+			if threat.Title != "Connection to private network" {
+				t.Errorf("Expected 'Connection to private network' for %s, got %q", tt.dstIP, threat.Title)
+			}
+		})
+	}
+}
+
 // Helper function tests
 func TestIsRFC1918(t *testing.T) {
 	tests := []struct {
