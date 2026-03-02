@@ -8,7 +8,7 @@
 [![Go Version](https://img.shields.io/github/go-mod/go-version/mensfeld/code-on-incus)](https://golang.org/)
 [![Latest Release](https://img.shields.io/github/v/release/mensfeld/code-on-incus)](https://github.com/mensfeld/code-on-incus/releases)
 
-**Secure and Fast Container Runtime for AI Coding Tools on Linux and macOS**
+**Security-Hardened Container Runtime for AI Coding Agents with Real-Time Threat Detection**
 
 Run AI coding assistants (Claude Code, opencode, Aider, and more) in isolated, production-grade Incus containers with zero permission headaches, perfect file ownership, and true multi-session support.
 
@@ -67,12 +67,14 @@ The tool abstraction layer makes it easy to add support for new AI coding assist
 - Container snapshots - Create checkpoints, rollback changes, and branch experiments with full state preservation
 
 **Security & Isolation**
+- Credential protection - SSH keys, `.env` files, Git credentials, and environment variables are **never** exposed unless explicitly mounted
+- Real-time threat detection - Kernel-level nftables monitoring detects reverse shells, C2 connections, data exfiltration, DNS tunneling, and credential scanning
+- Automated response - Auto-pause on HIGH threats, auto-kill on CRITICAL — no manual intervention needed
+- Network isolation - Firewalld-based restricted/allowlist/open modes block private network access and prevent exfiltration
+- Protected paths - `.git/hooks`, `.git/config`, `.husky`, `.vscode` mounted read-only to prevent supply-chain attacks
+- System containers - Full OS isolation with unprivileged containers, better than Docker privileged mode
 - Automatic UID mapping - No permission hell, files owned correctly
-- System containers - Full security isolation, better than Docker privileged mode
-- Project separation - Complete isolation between workspaces
-- Credential protection - No risk of SSH keys, `.env` files, or Git credentials being exposed to AI tools
-- Network isolation - Built-in firewalld limits block private network access and prevent data exfiltration (restricted/allowlist modes)
-- **Real-time security monitoring** - Always-on threat detection for reverse shells, data exfiltration, and environment scanning with automated response
+- Audit logging - All security events logged to JSONL for forensics and compliance
 
 **Safe Dangerous Operations**
 - AI coding tools often need broad filesystem access or bypass permission checks
@@ -111,6 +113,20 @@ coi shell --tool opencode
 ### What is Incus?
 
 Incus is a modern Linux container and virtual machine manager, forked from LXD. Unlike Docker (which uses application containers), Incus provides **system containers** that behave like lightweight VMs with full init systems.
+
+### Security Comparison
+
+| Capability | **code-on-incus** | Docker Sandbox | Bare Metal |
+|------------|-------------------|----------------|------------|
+| **Credential isolation** | Default (never exposed) | Partial | None |
+| **Real-time threat detection** | Kernel-level (nftables) | No | No |
+| **Reverse shell detection** | Auto-kill | No | No |
+| **Data exfiltration alerts** | Auto-pause | No | No |
+| **Network isolation** | Firewalld (3 modes) | Basic | No |
+| **Protected paths** | Read-only mounts | No | No |
+| **Auto response (pause/kill)** | Yes | No | No |
+| **Audit logging** | JSONL forensics | No | No |
+| **Supply-chain attack prevention** | Git hooks/IDE configs protected | No | No |
 
 ### Why Incus Instead of Docker Sandboxes?
 
