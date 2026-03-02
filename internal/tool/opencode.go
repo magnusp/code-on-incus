@@ -1,7 +1,9 @@
 package tool
 
 // OpencodeTool implements Tool for opencode (https://opencode.ai)
-type OpencodeTool struct{}
+type OpencodeTool struct {
+	permissionMode string // "bypass" (default) or "interactive"
+}
 
 // NewOpencode creates a new opencode tool instance
 func NewOpencode() Tool { return &OpencodeTool{} }
@@ -28,12 +30,22 @@ func (c *OpencodeTool) DiscoverSessionID(stateDir string) string { return "" }
 
 // GetSandboxSettings returns the opencode permission bypass config.
 // Injected into ~/.config/opencode/opencode.json so opencode runs without interactive prompts.
+// Returns empty map when permission mode is "interactive" (human-in-the-loop).
 func (c *OpencodeTool) GetSandboxSettings() map[string]interface{} {
+	if c.permissionMode == "interactive" {
+		return map[string]interface{}{}
+	}
 	return map[string]interface{}{
 		"permission": map[string]interface{}{
 			"*": "allow",
 		},
 	}
+}
+
+// SetPermissionMode sets the permission mode for opencode.
+// Valid values: "bypass" (default) or "interactive" (human-in-the-loop).
+func (c *OpencodeTool) SetPermissionMode(mode string) {
+	c.permissionMode = mode
 }
 
 // EssentialConfigFiles implements ToolWithConfigDirFiles.

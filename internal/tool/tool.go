@@ -67,7 +67,8 @@ type ToolWithConfigDirFiles interface {
 
 // ClaudeTool implements Tool for Claude Code
 type ClaudeTool struct {
-	effortLevel string // "low", "medium", "high" - defaults to "medium" if empty
+	effortLevel    string // "low", "medium", "high" - defaults to "medium" if empty
+	permissionMode string // "bypass" (default) or "interactive"
 }
 
 // NewClaude creates a new Claude tool instance
@@ -93,7 +94,12 @@ func (c *ClaudeTool) SessionsDirName() string {
 
 func (c *ClaudeTool) BuildCommand(sessionID string, resume bool, resumeSessionID string) []string {
 	// Base command with flags
-	cmd := []string{"claude", "--verbose", "--permission-mode", "bypassPermissions"}
+	cmd := []string{"claude", "--verbose"}
+
+	// Only add bypass permissions when not in interactive mode
+	if c.permissionMode != "interactive" {
+		cmd = append(cmd, "--permission-mode", "bypassPermissions")
+	}
 
 	// Add session/resume flag
 	if resume {
@@ -130,14 +136,15 @@ func (c *ClaudeTool) DiscoverSessionID(stateDir string) string {
 }
 
 func (c *ClaudeTool) GetSandboxSettings() map[string]interface{} {
-	// Settings to inject into .claude/settings.json for bypassing permissions
-	// and setting effort level
-	settings := map[string]interface{}{
-		"allowDangerouslySkipPermissions": true,
-		"bypassPermissionsModeAccepted":   true,
-		"permissions": map[string]string{
+	settings := map[string]interface{}{}
+
+	// Only inject bypass permission settings when not in interactive mode
+	if c.permissionMode != "interactive" {
+		settings["allowDangerouslySkipPermissions"] = true
+		settings["bypassPermissionsModeAccepted"] = true
+		settings["permissions"] = map[string]string{
 			"defaultMode": "bypassPermissions",
-		},
+		}
 	}
 
 	// Set effort level (default to "medium" if not configured)
@@ -191,4 +198,19 @@ type ToolWithEffortLevel interface {
 	// SetEffortLevel sets the effort level for the tool.
 	// Valid values depend on the tool (e.g., "low", "medium", "high" for Claude).
 	SetEffortLevel(level string)
+}
+
+// SetPermissionMode sets the permission mode for Claude Code.
+// Valid values: "bypass" (default, all permissions auto-granted) or "interactive" (human-in-the-loop).
+func (c *ClaudeTool) SetPermissionMode(mode string) {
+	c.permissionMode = mode
+}
+
+// ToolWithPermissionMode is an optional interface for tools that support
+// configurable permission modes (e.g., bypass vs interactive).
+type ToolWithPermissionMode interface {
+	Tool
+	// SetPermissionMode sets the permission mode for the tool.
+	// Valid values: "bypass" (default) or "interactive" (human-in-the-loop).
+	SetPermissionMode(mode string)
 }

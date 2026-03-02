@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Features
+
+- [Feature] **Configurable permission mode** — New `permission_mode` option under `[tool]` config allows switching between `"bypass"` (default, current behavior with all permissions auto-granted) and `"interactive"` (human-in-the-loop, tool asks before running commands). Supports both Claude and opencode. Configure via `permission_mode = "interactive"` in your `.coi.toml` under `[tool]`.
+
 ### Refactoring
 
 - [Refactoring] **Unified config handling for all tools** - Both `ClaudeTool` and `OpencodeTool` now implement the `ToolWithConfigDirFiles` interface, eliminating hardcoded Claude-specific defaults from `setupCLIConfig()`. Removed the dead `ToolWithHomeConfigFile` interface and `setupHomeConfigFile()` function. The `ToolWithConfigDirFiles` interface now includes `StateConfigFileName()` and `AlwaysSetupConfig()` so each tool fully describes its own config layout.

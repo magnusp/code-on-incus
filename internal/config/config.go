@@ -122,9 +122,10 @@ type ProfileConfig struct {
 
 // ToolConfig represents AI coding tool configuration
 type ToolConfig struct {
-	Name   string           `toml:"name"`   // Tool name: "claude", "aider", "cursor", etc.
-	Binary string           `toml:"binary"` // Binary name to execute (if empty, uses tool name)
-	Claude ClaudeToolConfig `toml:"claude"` // Claude-specific settings
+	Name           string           `toml:"name"`            // Tool name: "claude", "aider", "cursor", etc.
+	Binary         string           `toml:"binary"`          // Binary name to execute (if empty, uses tool name)
+	PermissionMode string           `toml:"permission_mode"` // Permission mode: "bypass" (default) or "interactive"
+	Claude         ClaudeToolConfig `toml:"claude"`          // Claude-specific settings
 }
 
 // ClaudeToolConfig contains Claude Code-specific settings
@@ -444,6 +445,10 @@ func (c *Config) Merge(other *Config) {
 	}
 	if other.Tool.Binary != "" {
 		c.Tool.Binary = other.Tool.Binary
+	}
+	// Merge permission mode
+	if other.Tool.PermissionMode != "" {
+		c.Tool.PermissionMode = other.Tool.PermissionMode
 	}
 	// Merge Claude-specific settings
 	if other.Tool.Claude.EffortLevel != "" {

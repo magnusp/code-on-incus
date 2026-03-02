@@ -544,6 +544,59 @@ func TestMergeBoolZeroValueBug(t *testing.T) {
 	}
 }
 
+func TestPermissionModeMerge(t *testing.T) {
+	tests := []struct {
+		name         string
+		baseMode     string
+		otherMode    string
+		expectedMode string
+	}{
+		{
+			name:         "empty base + interactive other = interactive",
+			baseMode:     "",
+			otherMode:    "interactive",
+			expectedMode: "interactive",
+		},
+		{
+			name:         "bypass base + interactive other = interactive",
+			baseMode:     "bypass",
+			otherMode:    "interactive",
+			expectedMode: "interactive",
+		},
+		{
+			name:         "interactive base + empty other = interactive (preserved)",
+			baseMode:     "interactive",
+			otherMode:    "",
+			expectedMode: "interactive",
+		},
+		{
+			name:         "empty base + empty other = empty",
+			baseMode:     "",
+			otherMode:    "",
+			expectedMode: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := GetDefaultConfig()
+			base.Tool.PermissionMode = tt.baseMode
+
+			other := &Config{
+				Tool: ToolConfig{
+					PermissionMode: tt.otherMode,
+				},
+			}
+
+			base.Merge(other)
+
+			if base.Tool.PermissionMode != tt.expectedMode {
+				t.Errorf("Expected permission mode '%s', got '%s'", tt.expectedMode, base.Tool.PermissionMode)
+			}
+		})
+	}
+}
+
 func TestPreserveWorkspacePathMerge(t *testing.T) {
 	tests := []struct {
 		name     string
