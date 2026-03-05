@@ -10,7 +10,7 @@ slot appears "available" and a new slot is allocated, creating a fresh container
 
 Flow:
 1. Start persistent session on slot 1
-2. Exit to bash, create a marker file at /tmp/persist-marker-COI-TEST
+2. Exit to bash, create a marker file at /var/tmp/persist-marker-COI-TEST
 3. Poweroff (container stops but is kept)
 4. Verify stopped container still exists
 5. Resume with --resume (no explicit --slot)
@@ -38,7 +38,7 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
     """
     Test that --resume restarts the original stopped container, not a fresh one.
 
-    The marker file /tmp/persist-marker-COI-TEST is created inside the container
+    The marker file /var/tmp/persist-marker-COI-TEST is created inside the container
     during the first session. It lives outside ~/.claude and the workspace, so it
     can only survive if the same container is restarted (not recreated from image).
 
@@ -83,7 +83,7 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
     # This simulates system-level state (like apt-installed packages)
     with with_live_screen(child) as monitor:
         time.sleep(1)
-        child.send("touch /tmp/persist-marker-COI-TEST && echo MARKER_CREATED_999")
+        child.send("touch /var/tmp/persist-marker-COI-TEST && echo MARKER_CREATED_999")
         time.sleep(0.5)
         child.send("\x0d")
         time.sleep(2)
@@ -154,7 +154,7 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
     with with_live_screen(child2) as monitor:
         time.sleep(1)
         child2.send(
-            "test -f /tmp/persist-marker-COI-TEST "
+            "test -f /var/tmp/persist-marker-COI-TEST "
             "&& echo MARKER_FOUND_777 "
             "|| echo MARKER_MISSING_888"
         )
@@ -208,7 +208,7 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
 
     # Assert marker was found — proves the original container was restarted
     assert marker_found and not marker_missing, (
-        f"Marker file /tmp/persist-marker-COI-TEST should exist in resumed container, "
+        f"Marker file /var/tmp/persist-marker-COI-TEST should exist in resumed container, "
         f"proving the original stopped container was restarted (not a fresh one created). "
         f"marker_found={marker_found}, marker_missing={marker_missing}. "
         f"Output:\n{output2}"
