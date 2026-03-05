@@ -153,8 +153,20 @@ func TestOpencodeTool_GetSandboxSettings_InteractiveMode(t *testing.T) {
 	oc := &OpencodeTool{permissionMode: "interactive"}
 	settings := oc.GetSandboxSettings()
 
-	if len(settings) != 0 {
-		t.Errorf("Expected empty map in interactive mode, got %v", settings)
+	perm, ok := settings["permission"]
+	if !ok {
+		t.Fatal("GetSandboxSettings() missing 'permission' key in interactive mode")
+	}
+	permMap, ok := perm.(map[string]interface{})
+	if !ok {
+		t.Fatalf("'permission' value is %T, want map[string]interface{}", perm)
+	}
+	val, ok := permMap["*"]
+	if !ok {
+		t.Fatal("permission map missing '*' key in interactive mode")
+	}
+	if val != "ask" {
+		t.Errorf("permission['*'] = %q, want %q", val, "ask")
 	}
 }
 
