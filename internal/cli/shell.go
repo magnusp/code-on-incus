@@ -146,9 +146,10 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		fmt.Fprintf(os.Stderr, "Resuming session: %s\n", resumeID)
 	}
 
-	// When resuming, inherit persistent flag from the original session
-	// unless it was explicitly overridden by the user
+	// When resuming, inherit persistent flag and original slot from the session
+	// unless explicitly overridden by the user.
 	// Skip for workspace-session tools (they don't have COI metadata files)
+	var resumeSlot int // Original slot from session metadata (0 = not set)
 	if resumeID != "" && !isWorkspaceSessionTool {
 		metadataPath := filepath.Join(sessionsDir, resumeID, "metadata.json")
 		if metadata, err := session.LoadSessionMetadata(metadataPath); err == nil {
@@ -157,6 +158,14 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 				persistent = metadata.Persistent
 				if persistent {
 					fmt.Fprintf(os.Stderr, "Inherited persistent mode from session\n")
+				}
+			}
+
+			// Extract original slot from container name so we reuse the same container
+			// instead of allocating a new slot (which would create a fresh container)
+			if !cmd.Flags().Changed("slot") {
+				if _, origSlot, err := session.ParseContainerName(metadata.ContainerName); err == nil {
+					resumeSlot = origSlot
 				}
 			}
 		}
@@ -175,7 +184,11 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 
 	// Allocate slot - always check for availability and auto-increment if needed
 	slotNum := slot
-	if slotNum == 0 {
+	if resumeSlot > 0 && slotNum == 0 {
+		// Resuming a session: reuse the original slot so the stopped container is restarted
+		slotNum = resumeSlot
+		fmt.Fprintf(os.Stderr, "Reusing original slot %d from session\n", slotNum)
+	} else if slotNum == 0 {
 		// No slot specified, find first available
 		slotNum, err = session.AllocateSlot(absWorkspace, 10)
 		if err != nil {

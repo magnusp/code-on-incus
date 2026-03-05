@@ -18,6 +18,12 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **Persistent session resume creates fresh container instead of reusing stopped one** — When resuming a persistent session with `--resume`, slot allocation skipped the original stopped container (because it was occupied) and allocated a new slot, creating a fresh container. System-level changes (installed packages, files outside config dirs) were lost. Fixed by extracting the original slot from session metadata and reusing it on resume, so the stopped container is restarted instead of replaced. Fixes #190.
+
+- [Bug Fix] **Opencode session resume broken due to hardcoded `.claude` check** — `SessionExists()` and `ListSavedSessions()` hardcoded `.claude` as the directory to check when detecting saved sessions. Opencode sessions save config under `.config/opencode`, so the lookup never found them, breaking both `--resume` and `--resume=<uuid>`. Changed to check for `metadata.json` instead — a tool-agnostic indicator present in every saved session. Fixes #183.
+
+- [Bug Fix] **Opencode interactive permission mode ineffective** — When `permission_mode = "interactive"`, `GetSandboxSettings()` returned an empty map. In opencode, no permissions config means no restrictions, making interactive mode identical to bypass mode. Fixed by returning `{"permission": {"*": "ask"}}` in interactive mode. Fixes #186.
+
 - [Bug Fix] **Docker Compose fails inside session containers** - Fixed Docker/nested container support flags (`security.nesting`, `security.syscalls.intercept.mknod`, `security.syscalls.intercept.setxattr`) not being set on session containers created via `coi shell`. The main session setup path (`session/setup.go`) used `incus init` + `incus start` but never called `enableDockerSupport()`, so containers launched via the primary user-facing flow had no Docker support. Also changed `LaunchContainer`/`LaunchContainerPersistent` to set security flags before first boot (using `incus init` + configure + `incus start` instead of `incus launch` + configure) to eliminate a race condition. Added Docker Compose integration test.
 
 - [Bug Fix] **Fix double-cleanup race condition in shell signal handler** - When a signal (e.g., SIGINT/SIGTERM) arrived while `shellCommand` was already returning normally, both the `defer` and the signal handler goroutine could call `doCleanup()` concurrently — stopping monitoring daemons twice and running session cleanup twice. Wrapped `doCleanup` in `sync.Once` to ensure cleanup executes exactly once regardless of which path triggers first. Includes integration test.
