@@ -29,10 +29,10 @@ from support.helpers import (
     spawn_coi,
     wait_for_container_ready,
     wait_for_prompt,
+    wait_for_specific_container_deletion,
     wait_for_text_in_monitor,
     wait_for_text_on_screen,
     with_live_screen,
-    wait_for_specific_container_deletion,
 )
 
 
