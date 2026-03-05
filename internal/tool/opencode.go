@@ -28,12 +28,18 @@ func (c *OpencodeTool) BuildCommand(sessionID string, resume bool, resumeSession
 // DiscoverSessionID returns "" because opencode uses SQLite (not JSONL files).
 func (c *OpencodeTool) DiscoverSessionID(stateDir string) string { return "" }
 
-// GetSandboxSettings returns the opencode permission bypass config.
-// Injected into ~/.config/opencode/opencode.json so opencode runs without interactive prompts.
-// Returns empty map when permission mode is "interactive" (human-in-the-loop).
+// GetSandboxSettings returns the opencode permission config.
+// In bypass mode (default): injects {"permission": {"*": "allow"}} so opencode runs
+// without interactive prompts.
+// In interactive mode: injects {"permission": {"*": "ask"}} so opencode prompts the
+// user before each action (human-in-the-loop).
 func (c *OpencodeTool) GetSandboxSettings() map[string]interface{} {
 	if c.permissionMode == "interactive" {
-		return map[string]interface{}{}
+		return map[string]interface{}{
+			"permission": map[string]interface{}{
+				"*": "ask",
+			},
+		}
 	}
 	return map[string]interface{}{
 		"permission": map[string]interface{}{
