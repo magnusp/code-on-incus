@@ -151,18 +151,18 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
     time.sleep(3)
 
     # Check if marker file exists — this proves the same container was restarted
+    # Use $? expansion so the sentinel string only appears in the output, not in
+    # the echoed command line (which would cause false matches in the monitor).
     with with_live_screen(child2) as monitor:
         time.sleep(1)
         child2.send(
-            "test -f /var/tmp/persist-marker-COI-TEST "
-            "&& echo MARKER_FOUND_777 "
-            "|| echo MARKER_MISSING_888"
+            "test -f /var/tmp/persist-marker-COI-TEST; "
+            "echo MARKER_EXIT_${?}_END"
         )
         time.sleep(0.5)
         child2.send("\x0d")
         time.sleep(2)
-        marker_found = wait_for_text_in_monitor(monitor, "MARKER_FOUND_777", timeout=10)
-        marker_missing = wait_for_text_in_monitor(monitor, "MARKER_MISSING_888", timeout=3)
+        marker_found = wait_for_text_in_monitor(monitor, "MARKER_EXIT_0_END", timeout=10)
 
     # Get output for debugging
     if hasattr(child2.logfile_read, "get_raw_output"):
@@ -207,9 +207,9 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
         assert cn not in containers, f"Container {cn} should be deleted after cleanup"
 
     # Assert marker was found — proves the original container was restarted
-    assert marker_found and not marker_missing, (
+    assert marker_found, (
         f"Marker file /var/tmp/persist-marker-COI-TEST should exist in resumed container, "
         f"proving the original stopped container was restarted (not a fresh one created). "
-        f"marker_found={marker_found}, marker_missing={marker_missing}. "
+        f"marker_found={marker_found}. "
         f"Output:\n{output2}"
     )
