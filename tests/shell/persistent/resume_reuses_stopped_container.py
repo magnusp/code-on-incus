@@ -155,10 +155,7 @@ def test_persistent_resume_reuses_stopped_container(coi_binary, cleanup_containe
     # the echoed command line (which would cause false matches in the monitor).
     with with_live_screen(child2) as monitor:
         time.sleep(1)
-        child2.send(
-            "test -f /var/tmp/persist-marker-COI-TEST; "
-            "echo MARKER_EXIT_${?}_END"
-        )
+        child2.send("test -f /var/tmp/persist-marker-COI-TEST; echo MARKER_EXIT_${?}_END")
         time.sleep(0.5)
         child2.send("\x0d")
         time.sleep(2)
