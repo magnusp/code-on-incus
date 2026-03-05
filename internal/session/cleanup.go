@@ -234,9 +234,9 @@ func SaveMetadataEarly(sessionsDir, sessionID, containerName, workspace string, 
 
 // SessionExists checks if a session with the given ID exists and is valid
 func SessionExists(sessionsDir, sessionID string) bool {
-	statePath := filepath.Join(sessionsDir, sessionID, ".claude")
-	info, err := os.Stat(statePath)
-	return err == nil && info.IsDir()
+	metadataPath := filepath.Join(sessionsDir, sessionID, "metadata.json")
+	info, err := os.Stat(metadataPath)
+	return err == nil && !info.IsDir()
 }
 
 // ListSavedSessions lists all saved sessions in the sessions directory
@@ -252,9 +252,9 @@ func ListSavedSessions(sessionsDir string) ([]string, error) {
 	var sessions []string
 	for _, entry := range entries {
 		if entry.IsDir() {
-			// Check if it contains a .claude directory
-			statePath := filepath.Join(sessionsDir, entry.Name(), ".claude")
-			if info, err := os.Stat(statePath); err == nil && info.IsDir() {
+			// Check if it contains a metadata.json file (tool-agnostic indicator)
+			metadataPath := filepath.Join(sessionsDir, entry.Name(), "metadata.json")
+			if info, err := os.Stat(metadataPath); err == nil && !info.IsDir() {
 				sessions = append(sessions, entry.Name())
 			}
 		}
