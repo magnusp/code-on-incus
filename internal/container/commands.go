@@ -273,11 +273,11 @@ func LaunchContainerPersistent(imageAlias, containerName string) error {
 // EnableDockerSupport configures the container to support Docker/nested containers.
 //
 // This function sets security flags and sysctl overrides required for Docker:
-// - security.nesting=true: Enables nested containerization
-// - security.syscalls.intercept.mknod=true: Safe device node creation
-// - security.syscalls.intercept.setxattr=true: Safe filesystem attribute handling
-// - linux.sysctl.net.ipv4.ip_unprivileged_port_start=0: Allows binding to low ports
-//   and prevents runc from failing with "permission denied" on sysctl writes (#187)
+//   - security.nesting=true: Enables nested containerization
+//   - security.syscalls.intercept.mknod=true: Safe device node creation
+//   - security.syscalls.intercept.setxattr=true: Safe filesystem attribute handling
+//   - linux.sysctl.net.ipv4.ip_unprivileged_port_start=0: Allows binding to low ports
+//     and prevents runc from failing with "permission denied" on sysctl writes (#187)
 //
 // These flags must be set before the container's first boot so the kernel loads
 // the correct seccomp profile. Setting them on a running container is a race
