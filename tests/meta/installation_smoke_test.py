@@ -187,7 +187,8 @@ def test_full_installation_process(meta_container, coi_binary):
         cd /root
         {clone_script}
         cd code-on-incus
-        /usr/local/go/bin/go build -o coi ./cmd/coi
+        export PATH=$PATH:/usr/local/go/bin
+        make build
         ./coi version
         """,
         timeout=300,

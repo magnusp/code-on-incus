@@ -32,6 +32,12 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libsystemd-dev
 
+      - name: Prepare embedded build assets
+        run: |
+          mkdir -p internal/image/embedded
+          cp scripts/build/coi.sh internal/image/embedded/coi_build.sh
+          cp testdata/dummy/dummy internal/image/embedded/dummy
+
       - name: Run golangci-lint
         uses: golangci/golangci-lint-action@1e7e51e771db61008b38414a730f564565cf7c20 # v9.2.0
         with:
@@ -60,6 +66,12 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y libsystemd-dev
+
+      - name: Prepare embedded build assets
+        run: |
+          mkdir -p internal/image/embedded
+          cp scripts/build/coi.sh internal/image/embedded/coi_build.sh
+          cp testdata/dummy/dummy internal/image/embedded/dummy
 
       - name: Run unit tests with coverage and race detector
         run: |
@@ -334,6 +346,12 @@ jobs:
         with:
           path: /tmp/ubuntu-base-image.tar.gz
           key: ${{ runner.os }}-ubuntu-22.04-base-image
+
+      - name: Prepare embedded build assets
+        run: |
+          mkdir -p internal/image/embedded
+          cp scripts/build/coi.sh internal/image/embedded/coi_build.sh
+          cp testdata/dummy/dummy internal/image/embedded/dummy
 
       - name: Build COI binary
         run: |

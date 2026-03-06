@@ -29,6 +29,7 @@ dist/
 build/
 !scripts/build
 !tests/build
+internal/image/embedded/
 
 # Test artifacts
 tmp/

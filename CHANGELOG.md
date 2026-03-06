@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Bug Fixes
+
+- [Fix] **`coi build --force` works from any directory** — Build assets (`coi.sh` build script and `dummy` test stub) are now embedded into the binary at compile time via `//go:embed`, so `coi build` no longer requires running from the project root. Disk files still take priority for development (#176).
+
 ### Features
 
 - [Feature] **Configurable permission mode** — New `permission_mode` option under `[tool]` config allows switching between `"bypass"` (default, current behavior with all permissions auto-granted) and `"interactive"` (human-in-the-loop, tool asks before running commands). Supports both Claude and opencode. Configure via `permission_mode = "interactive"` in your `.coi.toml` under `[tool]`.

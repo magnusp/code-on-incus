@@ -30,6 +30,9 @@ LDFLAGS=-ldflags "-X github.com/mensfeld/code-on-incus/internal/cli.Version=$(VE
 # Build the project
 build:
 	@echo "Building $(BINARY_NAME) version $(VERSION)..."
+	@mkdir -p internal/image/embedded
+	@cp scripts/build/coi.sh internal/image/embedded/coi_build.sh
+	@cp testdata/dummy/dummy internal/image/embedded/dummy
 	@$(GOBUILD) $(LDFLAGS) -o $(BUILD_DIR)/$(BINARY_NAME) ./cmd/coi
 	@ln -sf $(BINARY_NAME) $(BUILD_DIR)/$(BINARY_FULL)
 
@@ -45,6 +48,7 @@ clean:
 	@rm -f $(BUILD_DIR)/$(BINARY_FULL)
 	@rm -rf $(COVERAGE_DIR)
 	@rm -rf dist
+	@rm -rf internal/image/embedded
 	@bash scripts/cleanup-pycache.sh
 
 # Run all tests (unit tests only)
@@ -140,6 +144,9 @@ check-all: check doc-coverage
 build-all:
 	@echo "Building $(BINARY_NAME) version $(VERSION) for all platforms..."
 	@mkdir -p dist
+	@mkdir -p internal/image/embedded
+	@cp scripts/build/coi.sh internal/image/embedded/coi_build.sh
+	@cp testdata/dummy/dummy internal/image/embedded/dummy
 	@GOOS=linux GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-amd64 ./cmd/coi
 	@GOOS=linux GOARCH=arm64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-linux-arm64 ./cmd/coi
 	@GOOS=darwin GOARCH=amd64 $(GOBUILD) $(LDFLAGS) -o dist/$(BINARY_NAME)-darwin-amd64 ./cmd/coi
