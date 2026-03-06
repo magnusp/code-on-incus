@@ -65,9 +65,7 @@ def test_sysctl_works_in_container(coi_binary, cleanup_containers, workspace_dir
         f"sysctl write should succeed with ip_unprivileged_port_start pre-set. stderr: {result.stderr}"
     )
     output = (result.stdout + result.stderr).lower()
-    assert "permission denied" not in output, (
-        f"sysctl write should not be denied. output: {output}"
-    )
+    assert "permission denied" not in output, f"sysctl write should not be denied. output: {output}"
 
     # === Phase 3: Cleanup ===
 
