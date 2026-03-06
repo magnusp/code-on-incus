@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -313,32 +314,66 @@ func (b *Builder) buildCoi() error {
 	return b.runBuildScript("scripts/build/coi.sh")
 }
 
-// runBuildScript executes a build script from the scripts directory
-func (b *Builder) runBuildScript(scriptPath string) error {
-	// Find script - try relative to cwd first, then relative to executable
-	if _, err := os.Stat(scriptPath); err != nil {
-		// Try to find relative to executable
-		execPath, _ := os.Executable()
-		if execPath != "" {
-			altPath := fmt.Sprintf("%s/../%s", execPath, scriptPath)
-			if _, err := os.Stat(altPath); err == nil {
-				scriptPath = altPath
-			}
+// resolveAsset locates an asset file on disk or falls back to embedded content.
+// It tries the disk path first (CWD-relative, then executable-relative), and
+// falls back to writing embedded content to a temp file if the disk file is not found.
+// Returns the resolved path, a cleanup function, and any error.
+func (b *Builder) resolveAsset(diskPath string, embedded []byte) (string, func(), error) {
+	noop := func() {}
+
+	// Try CWD-relative path
+	if _, err := os.Stat(diskPath); err == nil {
+		return diskPath, noop, nil
+	}
+
+	// Try relative to executable
+	execPath, _ := os.Executable()
+	if execPath != "" {
+		altPath := filepath.Join(filepath.Dir(execPath), "..", diskPath)
+		if _, err := os.Stat(altPath); err == nil {
+			return altPath, noop, nil
 		}
 	}
 
-	// Verify script exists
-	if _, err := os.Stat(scriptPath); err != nil {
-		return fmt.Errorf("build script not found: %s (run from project root)", scriptPath)
+	// Fall back to embedded content
+	if len(embedded) == 0 {
+		return "", noop, fmt.Errorf("asset not found: %s (no embedded fallback)", diskPath)
 	}
 
-	b.opts.Logger(fmt.Sprintf("Using build script: %s", scriptPath))
-
-	// Push dummy to /tmp (required for build scripts)
-	dummyPath := "testdata/dummy/dummy"
-	if _, err := os.Stat(dummyPath); err != nil {
-		return fmt.Errorf("dummy not found at %s (run from project root)", dummyPath)
+	tmp, err := os.CreateTemp("", "coi-asset-*")
+	if err != nil {
+		return "", noop, fmt.Errorf("failed to create temp file: %w", err)
 	}
+
+	if _, err := tmp.Write(embedded); err != nil {
+		tmp.Close()
+		os.Remove(tmp.Name())
+		return "", noop, fmt.Errorf("failed to write embedded asset: %w", err)
+	}
+	tmp.Close()
+
+	cleanup := func() { os.Remove(tmp.Name()) }
+	return tmp.Name(), cleanup, nil
+}
+
+// runBuildScript executes a build script from the scripts directory
+func (b *Builder) runBuildScript(scriptPath string) error {
+	// Resolve build script (disk or embedded fallback)
+	resolvedScript, cleanupScript, err := b.resolveAsset(scriptPath, embeddedCoiBuildScript)
+	if err != nil {
+		return fmt.Errorf("build script not found: %w", err)
+	}
+	defer cleanupScript()
+
+	b.opts.Logger(fmt.Sprintf("Using build script: %s", resolvedScript))
+
+	// Resolve dummy (disk or embedded fallback)
+	dummyPath, cleanupDummy, err := b.resolveAsset("testdata/dummy/dummy", embeddedDummy)
+	if err != nil {
+		return fmt.Errorf("dummy not found: %w", err)
+	}
+	defer cleanupDummy()
+
 	b.opts.Logger("Pushing dummy to container...")
 	if err := b.mgr.PushFile(dummyPath, "/tmp/dummy"); err != nil {
 		return fmt.Errorf("failed to push dummy: %w", err)
@@ -346,7 +381,7 @@ func (b *Builder) runBuildScript(scriptPath string) error {
 
 	// Push build script to container
 	b.opts.Logger("Pushing build script to container...")
-	if err := b.mgr.PushFile(scriptPath, "/tmp/build.sh"); err != nil {
+	if err := b.mgr.PushFile(resolvedScript, "/tmp/build.sh"); err != nil {
 		return fmt.Errorf("failed to push build script: %w", err)
 	}
 
@@ -379,10 +414,10 @@ func (b *Builder) buildCustom() error {
 		return fmt.Errorf("failed to read build script: %w", err)
 	}
 
-	// Push dummy to /tmp (required for test build scripts)
-	dummyPath := "testdata/dummy/dummy"
-	if _, err := os.Stat(dummyPath); err == nil {
-		// Only push if dummy exists (optional for custom builds)
+	// Push dummy to /tmp (optional for custom builds, use embedded fallback)
+	dummyPath, cleanupDummy, err := b.resolveAsset("testdata/dummy/dummy", embeddedDummy)
+	if err == nil {
+		defer cleanupDummy()
 		b.opts.Logger("Pushing dummy to container...")
 		if err := b.mgr.PushFile(dummyPath, "/tmp/dummy"); err != nil {
 			return fmt.Errorf("failed to push dummy: %w", err)
