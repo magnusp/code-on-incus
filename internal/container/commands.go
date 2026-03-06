@@ -272,10 +272,12 @@ func LaunchContainerPersistent(imageAlias, containerName string) error {
 
 // EnableDockerSupport configures the container to support Docker/nested containers.
 //
-// This function sets three security flags required for Docker to work properly:
-// - security.nesting=true: Enables nested containerization
-// - security.syscalls.intercept.mknod=true: Safe device node creation
-// - security.syscalls.intercept.setxattr=true: Safe filesystem attribute handling
+// This function sets security flags and sysctl overrides required for Docker:
+//   - security.nesting=true: Enables nested containerization
+//   - security.syscalls.intercept.mknod=true: Safe device node creation
+//   - security.syscalls.intercept.setxattr=true: Safe filesystem attribute handling
+//   - linux.sysctl.net.ipv4.ip_unprivileged_port_start=0: Allows binding to low ports
+//     and prevents runc from failing with "permission denied" on sysctl writes (#187)
 //
 // These flags must be set before the container's first boot so the kernel loads
 // the correct seccomp profile. Setting them on a running container is a race
@@ -283,7 +285,7 @@ func LaunchContainerPersistent(imageAlias, containerName string) error {
 //
 // Note: If an error occurs during configuration, the container may be left in a
 // partially configured state with some but not all flags set. Future troubleshooting
-// should verify all three flags are properly configured if Docker isn't working.
+// should verify all four settings are properly configured if Docker isn't working.
 func EnableDockerSupport(containerName string) error {
 	// Enable container nesting for Docker support
 	if err := IncusExec("config", "set", containerName, "security.nesting=true"); err != nil {
@@ -297,6 +299,14 @@ func EnableDockerSupport(containerName string) error {
 
 	// Enable syscall interception for setxattr (filesystem attributes)
 	if err := IncusExec("config", "set", containerName, "security.syscalls.intercept.setxattr=true"); err != nil {
+		return err
+	}
+
+	// Allow unprivileged port binding and prevent runc sysctl permission errors.
+	// Newer runc versions (1.3.x) try to write net.ipv4.ip_unprivileged_port_start
+	// via a detached procfs mount, which AppArmor blocks in nested containers.
+	// Pre-setting this sysctl at the Incus level avoids the permission denied error.
+	if err := IncusExec("config", "set", containerName, "linux.sysctl.net.ipv4.ip_unprivileged_port_start=0"); err != nil {
 		return err
 	}
 

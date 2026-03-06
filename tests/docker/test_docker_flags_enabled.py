@@ -6,6 +6,7 @@ Tests that:
 2. Verify security.nesting is set to true
 3. Verify security.syscalls.intercept.mknod is set to true
 4. Verify security.syscalls.intercept.setxattr is set to true
+5. Verify linux.sysctl.net.ipv4.ip_unprivileged_port_start is set to 0
 """
 
 import subprocess
@@ -22,7 +23,7 @@ def test_docker_flags_enabled(coi_binary, cleanup_containers, workspace_dir):
 
     Flow:
     1. Launch a container
-    2. Verify all three Docker-related security flags are enabled
+    2. Verify all four Docker-related settings are enabled
     3. Cleanup
     """
     container_name = calculate_container_name(workspace_dir, 1)
@@ -97,6 +98,29 @@ def test_docker_flags_enabled(coi_binary, cleanup_containers, workspace_dir):
     )
     assert result.stdout.strip() == "true", (
         "security.syscalls.intercept.setxattr should be enabled for Docker support"
+    )
+
+    # Check linux.sysctl.net.ipv4.ip_unprivileged_port_start
+    result = subprocess.run(
+        [
+            "incus",
+            "--project",
+            "default",
+            "config",
+            "get",
+            container_name,
+            "linux.sysctl.net.ipv4.ip_unprivileged_port_start",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, (
+        f"Failed to get linux.sysctl.net.ipv4.ip_unprivileged_port_start config. stderr: {result.stderr}"
+    )
+    assert result.stdout.strip() == "0", (
+        "linux.sysctl.net.ipv4.ip_unprivileged_port_start should be 0 for Docker support"
     )
 
     # === Phase 3: Cleanup ===

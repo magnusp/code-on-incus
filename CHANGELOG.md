@@ -18,6 +18,8 @@
 
 ### Bug Fixes
 
+- [Bug Fix] **Docker Compose fails with sysctl permission denied in containers** — Newer runc versions (1.3.x) try to write `net.ipv4.ip_unprivileged_port_start` via a detached procfs mount during container init, which AppArmor blocks in nested containers. Added `linux.sysctl.net.ipv4.ip_unprivileged_port_start=0` to `EnableDockerSupport()` so the value is pre-set at the Incus level before the container boots, preventing the permission denied error. Fixes #187.
+
 - [Bug Fix] **Persistent session resume creates fresh container instead of reusing stopped one** — When resuming a persistent session with `--resume`, slot allocation skipped the original stopped container (because it was occupied) and allocated a new slot, creating a fresh container. System-level changes (installed packages, files outside config dirs) were lost. Fixed by extracting the original slot from session metadata and reusing it on resume, so the stopped container is restarted instead of replaced. Fixes #190.
 
 - [Bug Fix] **Opencode session resume broken due to hardcoded `.claude` check** — `SessionExists()` and `ListSavedSessions()` hardcoded `.claude` as the directory to check when detecting saved sessions. Opencode sessions save config under `.config/opencode`, so the lookup never found them, breaking both `--resume` and `--resume=<uuid>`. Changed to check for `metadata.json` instead — a tool-agnostic indicator present in every saved session. Fixes #183.
