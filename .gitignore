@@ -52,6 +52,9 @@ test-config.toml
 # Session data (for local testing)
 .claude-on-incus/
 
+# opencode data (created when running opencode in workspace)
+.local/
+
 # Backup files
 *.bck.yml
 *.backup

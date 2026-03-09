@@ -566,6 +566,15 @@ func ensureTmuxServer(mgr *container.Manager, userPtr *int) {
 	}
 }
 
+// mergeToolEnv adds tool-specific environment variables (if the tool implements ToolWithContainerEnv).
+func mergeToolEnv(env map[string]string, t tool.Tool, workspacePath string) {
+	if twce, ok := t.(tool.ToolWithContainerEnv); ok {
+		for k, v := range twce.GetContainerEnv(workspacePath) {
+			env[k] = v
+		}
+	}
+}
+
 // runCLI executes the CLI tool in the container interactively
 func runCLI(result *session.SetupResult, sessionID string, useResumeFlag, restoreOnly bool, sessionsDir, resumeID string, t tool.Tool) error {
 	cmdToRun := buildCLICommand(sessionID, useResumeFlag, restoreOnly, sessionsDir, resumeID, t)
@@ -575,6 +584,7 @@ func runCLI(result *session.SetupResult, sessionID string, useResumeFlag, restor
 	if workspacePath == "" {
 		workspacePath = "/workspace" // Fallback for backwards compatibility
 	}
+	mergeToolEnv(containerEnv, t, workspacePath)
 	opts := container.ExecCommandOptions{
 		User:        userPtr,
 		Cwd:         workspacePath,
@@ -598,6 +608,7 @@ func runCLIInTmux(result *session.SetupResult, sessionID string, detached bool, 
 
 	cliCmd := buildCLICommand(sessionID, useResumeFlag, restoreOnly, sessionsDir, resumeID, t)
 	containerEnv, userPtr := buildContainerEnv(result)
+	mergeToolEnv(containerEnv, t, workspacePath)
 
 	// Build environment export commands for tmux
 	envExports := ""

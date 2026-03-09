@@ -4,6 +4,8 @@
 
 ### Bug Fixes
 
+- [Fix] **opencode session resume in ephemeral mode** — `coi shell --tool=opencode --continue` now correctly resumes the previous session. Two fixes: (1) `BuildCommand()` passes `--continue` (or `--session <id>`) to opencode when resuming, instead of always returning bare `opencode`. (2) New `ToolWithContainerEnv` interface allows tools to inject environment variables into the container; opencode uses this to set `XDG_DATA_HOME` and `XDG_STATE_HOME` to workspace subdirectories, so the SQLite database persists on the host mount across ephemeral container recreations instead of being destroyed with the container's `~/.local/share/opencode/`. Fixes #196.
+
 - [Fix] **`coi build --force` works from any directory** — Build assets (`coi.sh` build script and `dummy` test stub) are now embedded into the binary at compile time via `//go:embed`, so `coi build` no longer requires running from the project root. Disk files still take priority for development (#176).
 
 ### Features

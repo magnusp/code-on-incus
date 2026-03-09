@@ -31,19 +31,29 @@ func TestOpencodeTool_BuildCommand_NewSession(t *testing.T) {
 
 func TestOpencodeTool_BuildCommand_Resume(t *testing.T) {
 	oc := NewOpencode()
-	// opencode auto-continues from workspace .opencode/ SQLite, no flag needed
 	cmd := oc.BuildCommand("", true, "")
-	if len(cmd) != 1 || cmd[0] != "opencode" {
-		t.Errorf("BuildCommand(resume) = %v, want [opencode]", cmd)
+	expected := []string{"opencode", "--continue"}
+	if len(cmd) != len(expected) {
+		t.Fatalf("BuildCommand(resume) = %v, want %v", cmd, expected)
+	}
+	for i, v := range expected {
+		if cmd[i] != v {
+			t.Errorf("BuildCommand(resume)[%d] = %q, want %q", i, cmd[i], v)
+		}
 	}
 }
 
 func TestOpencodeTool_BuildCommand_ResumeWithID(t *testing.T) {
 	oc := NewOpencode()
-	// opencode auto-continues from workspace .opencode/ SQLite, no flag needed
 	cmd := oc.BuildCommand("", true, "some-id")
-	if len(cmd) != 1 || cmd[0] != "opencode" {
-		t.Errorf("BuildCommand(resume with ID) = %v, want [opencode]", cmd)
+	expected := []string{"opencode", "--session", "some-id"}
+	if len(cmd) != len(expected) {
+		t.Fatalf("BuildCommand(resume with ID) = %v, want %v", cmd, expected)
+	}
+	for i, v := range expected {
+		if cmd[i] != v {
+			t.Errorf("BuildCommand(resume with ID)[%d] = %q, want %q", i, cmd[i], v)
+		}
 	}
 }
 
@@ -188,6 +198,31 @@ func TestOpencodeTool_GetSandboxSettings_BypassDefault(t *testing.T) {
 	}
 	if val != "allow" {
 		t.Errorf("permission['*'] = %q, want %q", val, "allow")
+	}
+}
+
+func TestOpencodeTool_ImplementsContainerEnv(t *testing.T) {
+	oc := NewOpencode()
+
+	twce, ok := oc.(ToolWithContainerEnv)
+	if !ok {
+		t.Fatal("OpencodeTool should implement ToolWithContainerEnv")
+	}
+
+	env := twce.GetContainerEnv("/workspace")
+	if env["XDG_DATA_HOME"] != "/workspace/.local/share" {
+		t.Errorf("XDG_DATA_HOME = %q, want %q", env["XDG_DATA_HOME"], "/workspace/.local/share")
+	}
+	if env["XDG_STATE_HOME"] != "/workspace/.local/state" {
+		t.Errorf("XDG_STATE_HOME = %q, want %q", env["XDG_STATE_HOME"], "/workspace/.local/state")
+	}
+}
+
+func TestOpencodeTool_GetContainerEnv_CustomWorkspace(t *testing.T) {
+	oc := &OpencodeTool{}
+	env := oc.GetContainerEnv("/home/user/project")
+	if env["XDG_DATA_HOME"] != "/home/user/project/.local/share" {
+		t.Errorf("XDG_DATA_HOME = %q, want %q", env["XDG_DATA_HOME"], "/home/user/project/.local/share")
 	}
 }
 
