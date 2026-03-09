@@ -200,6 +200,17 @@ type ToolWithEffortLevel interface {
 	SetEffortLevel(level string)
 }
 
+// ToolWithContainerEnv is an optional interface for tools that need extra
+// environment variables set inside the container (e.g., to redirect data
+// storage to the workspace mount so it persists across ephemeral sessions).
+type ToolWithContainerEnv interface {
+	Tool
+	// GetContainerEnv returns environment variables to set when executing
+	// the tool inside the container. workspacePath is the mount point
+	// inside the container (e.g. "/workspace").
+	GetContainerEnv(workspacePath string) map[string]string
+}
+
 // SetPermissionMode sets the permission mode for Claude Code.
 // Valid values: "bypass" (default, all permissions auto-granted) or "interactive" (human-in-the-loop).
 func (c *ClaudeTool) SetPermissionMode(mode string) {

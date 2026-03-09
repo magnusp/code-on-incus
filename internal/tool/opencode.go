@@ -1,5 +1,7 @@
 package tool
 
+import "path/filepath"
+
 // OpencodeTool implements Tool for opencode (https://opencode.ai)
 type OpencodeTool struct {
 	permissionMode string // "bypass" (default) or "interactive"
@@ -18,11 +20,18 @@ func (c *OpencodeTool) ConfigDirName() string { return ".config/opencode" }
 func (c *OpencodeTool) SessionsDirName() string { return "sessions-opencode" }
 
 // BuildCommand builds the opencode launch command.
-// opencode stores all sessions in the workspace's .opencode/ SQLite DB.
-// It always starts with a new session — use Ctrl+S inside opencode to switch
-// to a previous session. There's no CLI flag for auto-resume.
+// When resume is true, passes --continue to auto-resume the last session,
+// or --session <id> if a specific session ID is provided.
 func (c *OpencodeTool) BuildCommand(sessionID string, resume bool, resumeSessionID string) []string {
-	return []string{"opencode"}
+	cmd := []string{"opencode"}
+	if resume {
+		if resumeSessionID != "" {
+			cmd = append(cmd, "--session", resumeSessionID)
+		} else {
+			cmd = append(cmd, "--continue")
+		}
+	}
+	return cmd
 }
 
 // DiscoverSessionID returns "" because opencode uses SQLite (not JSONL files).
@@ -69,3 +78,15 @@ func (c *OpencodeTool) StateConfigFileName() string { return "" }
 // AlwaysSetupConfig implements ToolWithConfigDirFiles.
 // Opencode needs sandbox permission bypass even without host config dir.
 func (c *OpencodeTool) AlwaysSetupConfig() bool { return true }
+
+// GetContainerEnv implements ToolWithContainerEnv.
+// Redirects XDG data and state directories to the workspace mount so opencode's
+// SQLite database persists across ephemeral container recreations.
+// Without this, data lives in ~/.local/share/opencode/ (inside the container)
+// and is destroyed when the ephemeral container is deleted.
+func (c *OpencodeTool) GetContainerEnv(workspacePath string) map[string]string {
+	return map[string]string{
+		"XDG_DATA_HOME":  filepath.Join(workspacePath, ".local", "share"),
+		"XDG_STATE_HOME": filepath.Join(workspacePath, ".local", "state"),
+	}
+}
