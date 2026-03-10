@@ -20,6 +20,14 @@ Run AI coding assistants (Claude Code, opencode, Aider, and more) in isolated, p
 
 *Think Docker for AI coding tools, but with system containers that actually work like real machines.*
 
+<p align="center">
+  <a href="https://www.youtube.com/watch?v=t78-JUnTK5Q">
+    <img src="https://img.youtube.com/vi/t78-JUnTK5Q/maxresdefault.jpg" alt="BetterStack video about Code on Incus" width="600">
+  </a>
+  <br>
+  <em>Watch the BetterStack video about Code on Incus</em>
+</p>
+
 ![Demo](misc/demo.gif)
 
 ## Table of Contents
