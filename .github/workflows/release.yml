@@ -43,12 +43,20 @@ jobs:
             echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
           fi
 
-      - name: Install libsystemd-dev for CGo journal access
+      - name: Install build dependencies for CGo journal access
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo dpkg --add-architecture arm64
+            # Pin all existing DEB822 sources to amd64 only, so they don't try
+            # to fetch arm64 from mirrors that don't carry it (e.g. security.ubuntu.com)
+            for f in /etc/apt/sources.list.d/*.sources; do
+              if [ -f "$f" ] && ! grep -q '^Architectures:' "$f"; then
+                echo "Architectures: amd64" | sudo tee -a "$f" > /dev/null
+              fi
+            done
+            # Add arm64 sources from ports.ubuntu.com (the official arm64 mirror)
             CODENAME=$(lsb_release -cs)
-            printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: %s %s-updates\nComponents: main universe\nArchitectures: arm64\n' "$CODENAME" "$CODENAME" | sudo tee /etc/apt/sources.list.d/arm64-ports.sources
+            printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: %s %s-updates %s-security\nComponents: main universe\nArchitectures: arm64\n' "$CODENAME" "$CODENAME" "$CODENAME" | sudo tee /etc/apt/sources.list.d/arm64-ports.sources
             sudo apt-get update
             sudo apt-get install -y gcc-aarch64-linux-gnu libsystemd-dev:arm64
           else
