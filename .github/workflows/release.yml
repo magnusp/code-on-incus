@@ -47,14 +47,10 @@ jobs:
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo dpkg --add-architecture arm64
-            # Pin all existing DEB822 sources to amd64 only, so they don't try
-            # to fetch arm64 from mirrors that don't carry it (e.g. security.ubuntu.com)
-            for f in /etc/apt/sources.list.d/*.sources; do
-              if [ -f "$f" ] && ! grep -q '^Architectures:' "$f"; then
-                echo "Architectures: amd64" | sudo tee -a "$f" > /dev/null
-              fi
-            done
-            # Add arm64 sources from ports.ubuntu.com (the official arm64 mirror)
+            # Restrict all existing sources to amd64 only (prevents 404s from
+            # security.ubuntu.com and Azure mirrors that don't carry arm64)
+            echo 'APT::Architectures:: "amd64";' | sudo tee /etc/apt/apt.conf.d/99-restrict-amd64
+            # Add arm64 source from ports.ubuntu.com with explicit architecture override
             CODENAME=$(lsb_release -cs)
             printf 'Types: deb\nURIs: http://ports.ubuntu.com/ubuntu-ports\nSuites: %s %s-updates %s-security\nComponents: main universe\nArchitectures: arm64\n' "$CODENAME" "$CODENAME" "$CODENAME" | sudo tee /etc/apt/sources.list.d/arm64-ports.sources
             sudo apt-get update
