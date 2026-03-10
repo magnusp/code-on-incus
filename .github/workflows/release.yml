@@ -47,10 +47,14 @@ jobs:
         run: |
           if [ "${{ matrix.arch }}" = "arm64" ]; then
             sudo dpkg --add-architecture arm64
-            # Add arm64 sources
-            sudo sed -i 's/^deb /deb [arch=amd64] /' /etc/apt/sources.list.d/*.list 2>/dev/null || true
-            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs) main universe" | sudo tee /etc/apt/sources.list.d/arm64.list
-            echo "deb [arch=arm64] http://ports.ubuntu.com/ubuntu-ports $(lsb_release -cs)-updates main universe" | sudo tee -a /etc/apt/sources.list.d/arm64.list
+            # Add arm64 sources without modifying existing source lists
+            cat <<SOURCES | sudo tee /etc/apt/sources.list.d/arm64-ports.sources
+Types: deb
+URIs: http://ports.ubuntu.com/ubuntu-ports
+Suites: $(lsb_release -cs) $(lsb_release -cs)-updates
+Components: main universe
+Architectures: arm64
+SOURCES
             sudo apt-get update
             sudo apt-get install -y gcc-aarch64-linux-gnu libsystemd-dev:arm64
           else
