@@ -12,32 +12,50 @@ import (
 
 // Resolver handles DNS resolution with caching and fallback
 type Resolver struct {
-	cache *IPCache
+	cache      *IPCache
+	DomainTTLs map[string]uint32
 }
 
 // NewResolver creates a new resolver with a cache
 func NewResolver(cache *IPCache) *Resolver {
-	return &Resolver{cache: cache}
+	return &Resolver{
+		cache:      cache,
+		DomainTTLs: make(map[string]uint32),
+	}
 }
 
-// ResolveDomain resolves a single domain to IPv4 addresses
-// If the input is already an IPv4 address, it returns it directly
+// ResolveDomain resolves a single domain to IPv4 addresses.
+// It tries QueryDNS first for TTL information, falling back to net.LookupIP.
+// If the input is already an IPv4 address, it returns it directly with TTL=0.
 func (r *Resolver) ResolveDomain(domain string) ([]string, error) {
 	// Check if input is already an IP address
 	if ip := net.ParseIP(domain); ip != nil {
 		if ipv4 := ip.To4(); ipv4 != nil {
+			r.DomainTTLs[domain] = 0
 			return []string{ipv4.String()}, nil
 		}
 		return nil, fmt.Errorf("%s is not a valid IPv4 address", domain)
 	}
 
-	// Resolve domain name to IPs
+	// Try TTL-aware DNS query first
+	result, err := QueryDNS(domain)
+	if err == nil && len(result.IPs) > 0 {
+		r.DomainTTLs[domain] = result.TTL
+		log.Printf("  %s: resolved %d IPs (TTL: %ds)", domain, len(result.IPs), result.TTL)
+		return result.IPs, nil
+	}
+
+	// Fall back to standard resolver
+	if err != nil {
+		log.Printf("  %s: TTL-aware DNS failed (%v), falling back to standard resolver", domain, err)
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	addrs, err := net.DefaultResolver.LookupIP(ctx, "ip4", domain)
-	if err != nil {
-		return nil, fmt.Errorf("failed to resolve %s: %w", domain, err)
+	addrs, lookupErr := net.DefaultResolver.LookupIP(ctx, "ip4", domain)
+	if lookupErr != nil {
+		return nil, fmt.Errorf("failed to resolve %s: %w", domain, lookupErr)
 	}
 
 	ips := make([]string, 0, len(addrs))
@@ -50,6 +68,9 @@ func (r *Resolver) ResolveDomain(domain string) ([]string, error) {
 	if len(ips) == 0 {
 		return nil, fmt.Errorf("no IPv4 addresses found for %s", domain)
 	}
+
+	// TTL=0 indicates unknown (fallback path)
+	r.DomainTTLs[domain] = 0
 
 	return ips, nil
 }
@@ -70,6 +91,10 @@ func (r *Resolver) ResolveAll(domains []string) (map[string][]string, error) {
 			if cached, ok := r.cache.Domains[domain]; ok && len(cached) > 0 {
 				log.Printf("Using cached IPs for %s: %v", domain, cached)
 				results[domain] = cached
+				// Preserve cached TTL if available
+				if cachedTTL, ok := r.cache.TTLs[domain]; ok {
+					r.DomainTTLs[domain] = cachedTTL
+				}
 				resolvedCount++
 				continue
 			}
@@ -94,6 +119,26 @@ func (r *Resolver) ResolveAll(domains []string) (map[string][]string, error) {
 	}
 
 	return results, nil
+}
+
+// GetMinTTL returns the minimum TTL across all resolved domains.
+// Domains with TTL=0 (unknown/IP addresses) are ignored.
+// Returns 0 if no TTL information is available.
+func (r *Resolver) GetMinTTL() uint32 {
+	var minTTL uint32
+	first := true
+
+	for _, ttl := range r.DomainTTLs {
+		if ttl == 0 {
+			continue // Skip unknown TTLs (raw IPs or fallback resolution)
+		}
+		if first || ttl < minTTL {
+			minTTL = ttl
+			first = false
+		}
+	}
+
+	return minTTL
 }
 
 // IPsUnchanged checks if resolved IPs differ from cache
@@ -128,9 +173,13 @@ func (r *Resolver) IPsUnchanged(newIPs map[string][]string) bool {
 	return true
 }
 
-// UpdateCache updates the cache with new IPs
+// UpdateCache updates the cache with new IPs and TTLs
 func (r *Resolver) UpdateCache(newIPs map[string][]string) {
 	r.cache.Domains = newIPs
+	r.cache.TTLs = make(map[string]uint32, len(r.DomainTTLs))
+	for domain, ttl := range r.DomainTTLs {
+		r.cache.TTLs[domain] = ttl
+	}
 	r.cache.LastUpdate = time.Now()
 }
 

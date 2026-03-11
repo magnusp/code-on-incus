@@ -11,6 +11,7 @@ import (
 // IPCache stores resolved domain IPs with timestamp
 type IPCache struct {
 	Domains    map[string][]string `json:"domains"`
+	TTLs       map[string]uint32   `json:"ttls,omitempty"`
 	LastUpdate time.Time           `json:"last_update"`
 }
 
@@ -36,6 +37,7 @@ func (c *CacheManager) Load(containerName string) (*IPCache, error) {
 			// Return empty cache if file doesn't exist
 			return &IPCache{
 				Domains:    make(map[string][]string),
+				TTLs:       make(map[string]uint32),
 				LastUpdate: time.Time{},
 			}, nil
 		}
@@ -47,9 +49,12 @@ func (c *CacheManager) Load(containerName string) (*IPCache, error) {
 		return nil, fmt.Errorf("failed to parse cache file: %w", err)
 	}
 
-	// Initialize domains map if nil
+	// Initialize maps if nil (backwards-compatible with old cache files)
 	if cache.Domains == nil {
 		cache.Domains = make(map[string][]string)
+	}
+	if cache.TTLs == nil {
+		cache.TTLs = make(map[string]uint32)
 	}
 
 	return &cache, nil
