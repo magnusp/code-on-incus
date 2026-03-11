@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.8.0 (Unreleased)
+
+### Features
+
+- [Feature] **SSH agent forwarding** — Forward the host's SSH agent into containers so git-over-SSH works without copying private keys. The host's `SSH_AUTH_SOCK` is bridged into the container at `/tmp/ssh-agent.sock` via an Incus proxy device. Enable per-session with `coi shell --ssh-agent` or permanently with `forward_agent = true` under `[ssh]` in config. Disabled by default. Includes automatic retry logic to handle an Incus race condition where proxy devices on freshly-launched containers may not create the listen socket immediately. Includes integration tests for end-to-end forwarding, graceful skip on missing socket, invalid socket path, and device replacement on persistent containers.
+
 ## 0.7.0 (2026-03-10)
 
 ### Bug Fixes

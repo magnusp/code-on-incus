@@ -97,6 +97,7 @@ type SetupOptions struct {
 	IncusProject          string               // Incus project name
 	ProtectedPaths        []string             // Paths to mount read-only for security (e.g., .git/hooks, .vscode)
 	PreserveWorkspacePath bool                 // Mount workspace at same path as host instead of /workspace
+	ForwardSSHAgent       bool                 // Forward host SSH agent to container
 	Logger                func(string)
 	ContainerName         string // Use existing container (for testing) - skips container creation
 }
@@ -111,6 +112,7 @@ type SetupResult struct {
 	RunAsRoot              bool
 	Image                  string
 	ContainerWorkspacePath string // Path where workspace is mounted inside container (default: /workspace)
+	SSHAgentSocketPath     string // Path to SSH agent socket inside container (empty if not forwarded)
 }
 
 // Setup initializes a container for a Claude session
@@ -425,6 +427,15 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		)
 		if _, err := result.Manager.ExecCommand(remapCmd, container.ExecCommandOptions{Capture: true}); err != nil {
 			return nil, fmt.Errorf("failed to remap user %s to UID %d: %w", container.CodeUser, container.CodeUID, err)
+		}
+	}
+
+	// 6.6. Setup SSH agent forwarding (proxy device must be added to running container)
+	if opts.ForwardSSHAgent {
+		if err := setupSSHAgentForwarding(result.Manager, result.ContainerName, opts.Logger); err != nil {
+			opts.Logger(fmt.Sprintf("Warning: SSH agent forwarding failed: %v", err))
+		} else if os.Getenv("SSH_AUTH_SOCK") != "" {
+			result.SSHAgentSocketPath = "/tmp/ssh-agent.sock"
 		}
 	}
 
@@ -857,6 +868,79 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 	}
 
 	return nil
+}
+
+// setupSSHAgentForwarding configures an Incus proxy device to forward the host's
+// SSH agent socket into the container. This allows git operations inside the
+// container to use the host's SSH keys without copying them.
+func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logger func(string)) error {
+	hostSocket := os.Getenv("SSH_AUTH_SOCK")
+	if hostSocket == "" {
+		logger("SSH agent forwarding skipped: SSH_AUTH_SOCK not set on host")
+		return nil
+	}
+
+	// Verify the socket exists
+	if _, err := os.Stat(hostSocket); err != nil {
+		logger(fmt.Sprintf("SSH agent forwarding skipped: socket %s not accessible: %v", hostSocket, err))
+		return nil
+	}
+
+	containerSocket := "/tmp/ssh-agent.sock"
+
+	// Remove existing device if present (socket path may have changed between sessions)
+	_ = mgr.RemoveDevice("ssh-agent")
+
+	logger(fmt.Sprintf("Forwarding SSH agent: %s -> %s", hostSocket, containerSocket))
+
+	if err := addSSHAgentProxyDevice(mgr, hostSocket, containerSocket); err != nil {
+		return fmt.Errorf("failed to add SSH agent proxy device: %w", err)
+	}
+
+	// Verify the socket appears inside the container. Incus proxy devices can
+	// take a moment to create the listen socket, especially on freshly-started
+	// containers. If the socket doesn't appear, retry with a remove+re-add
+	// which works around an Incus race condition.
+	if waitForContainerSocket(mgr, containerSocket, 5*time.Second) {
+		return nil
+	}
+
+	logger("SSH agent socket not yet available, retrying device setup...")
+	_ = mgr.RemoveDevice("ssh-agent")
+
+	if err := addSSHAgentProxyDevice(mgr, hostSocket, containerSocket); err != nil {
+		return fmt.Errorf("failed to re-add SSH agent proxy device: %w", err)
+	}
+
+	if !waitForContainerSocket(mgr, containerSocket, 5*time.Second) {
+		logger("Warning: SSH agent socket did not appear in container after retry")
+	}
+
+	return nil
+}
+
+// addSSHAgentProxyDevice adds the proxy device for SSH agent forwarding.
+func addSSHAgentProxyDevice(mgr *container.Manager, hostSocket, containerSocket string) error {
+	return mgr.AddProxyDevice(
+		"ssh-agent",
+		fmt.Sprintf("unix:%s", hostSocket),
+		fmt.Sprintf("unix:%s", containerSocket),
+		container.CodeUID,
+		container.CodeUID,
+	)
+}
+
+// waitForContainerSocket polls for a Unix socket to appear inside the container.
+func waitForContainerSocket(mgr *container.Manager, socketPath string, timeout time.Duration) bool {
+	deadline := time.Now().Add(timeout)
+	checkCmd := fmt.Sprintf("test -S %s", socketPath)
+	for time.Now().Before(deadline) {
+		if _, err := mgr.ExecCommand(checkCmd, container.ExecCommandOptions{Capture: true}); err == nil {
+			return true
+		}
+		time.Sleep(500 * time.Millisecond)
+	}
+	return false
 }
 
 // hasLimits checks if any limits are configured

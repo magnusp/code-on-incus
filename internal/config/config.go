@@ -15,9 +15,15 @@ type Config struct {
 	Mounts     MountsConfig             `toml:"mounts"`
 	Limits     LimitsConfig             `toml:"limits"`
 	Git        GitConfig                `toml:"git"`
+	SSH        SSHConfig                `toml:"ssh"`
 	Security   SecurityConfig           `toml:"security"`
 	Monitoring MonitoringConfig         `toml:"monitoring"`
 	Profiles   map[string]ProfileConfig `toml:"profiles"`
+}
+
+// SSHConfig contains SSH-related settings
+type SSHConfig struct {
+	ForwardAgent *bool `toml:"forward_agent"` // Forward host SSH agent to container (default: false)
 }
 
 // GitConfig contains git-related security settings
@@ -260,6 +266,9 @@ func GetDefaultConfig() *Config {
 		Git: GitConfig{
 			WritableHooks: ptrBool(false),
 		},
+		SSH: SSHConfig{
+			ForwardAgent: ptrBool(false),
+		},
 		Security: SecurityConfig{
 			ProtectedPaths:           DefaultProtectedPaths(),
 			AdditionalProtectedPaths: []string{},
@@ -471,6 +480,11 @@ func (c *Config) Merge(other *Config) {
 	// Only override if explicitly set in the other config (nil means not set)
 	if other.Git.WritableHooks != nil {
 		c.Git.WritableHooks = other.Git.WritableHooks
+	}
+
+	// Merge SSH settings
+	if other.SSH.ForwardAgent != nil {
+		c.SSH.ForwardAgent = other.SSH.ForwardAgent
 	}
 
 	// Merge security settings
