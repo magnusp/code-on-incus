@@ -217,6 +217,13 @@ auto_stop = true
 # Graceful stop (true) or force stop (false)
 stop_graceful = true
 
+[ssh]
+# Forward host SSH agent to container (default: false)
+# When enabled, the host's SSH_AUTH_SOCK is forwarded into the container via an
+# Incus proxy device. This allows git over SSH to work inside the container without
+# copying SSH keys. Can also be enabled per-session with --ssh-agent flag.
+forward_agent = false
+
 [git]
 # Allow container to write to .git/hooks (default: false)
 # By default, .git/hooks is mounted read-only to prevent containers from

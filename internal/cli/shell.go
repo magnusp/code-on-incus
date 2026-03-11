@@ -255,6 +255,7 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		IncusProject:          cfg.Incus.Project,
 		ProtectedPaths:        protectedPaths,
 		PreserveWorkspacePath: cfg.Paths.PreserveWorkspacePath,
+		ForwardSSHAgent:       sshAgent || config.BoolVal(cfg.SSH.ForwardAgent),
 		ContainerName:         containerName,
 	}
 
@@ -527,6 +528,11 @@ func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 		"HOME":       result.HomeDir,
 		"TERM":       terminal.SanitizeTerm(os.Getenv("TERM")),
 		"IS_SANDBOX": "1",
+	}
+
+	// Set SSH_AUTH_SOCK if SSH agent forwarding was configured
+	if result.SSHAgentSocketPath != "" {
+		containerEnv["SSH_AUTH_SOCK"] = result.SSHAgentSocketPath
 	}
 
 	// Merge user-provided --env vars

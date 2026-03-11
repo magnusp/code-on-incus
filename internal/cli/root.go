@@ -27,6 +27,9 @@ var (
 	// Git security flag
 	writableGitHooks bool
 
+	// SSH agent forwarding flag
+	sshAgent bool
+
 	// Monitoring flag
 	enableMonitoring bool
 
@@ -124,6 +127,8 @@ func init() {
 		"Allow container to write to .git/hooks (disables security protection)")
 	rootCmd.PersistentFlags().BoolVar(&enableMonitoring, "monitor", false,
 		"Enable security monitoring with automatic threat response")
+	rootCmd.PersistentFlags().BoolVar(&sshAgent, "ssh-agent", false,
+		"Forward host SSH agent to container (for git over SSH)")
 
 	// Resource limit flags
 	rootCmd.PersistentFlags().StringVar(&limitCPU, "limit-cpu", "", "CPU count limit (e.g., '2', '0-3', '0,1,3')")

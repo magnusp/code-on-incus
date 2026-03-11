@@ -96,6 +96,26 @@ func (m *Manager) MountDisk(name, source, path string, shift, readonly bool) err
 	return IncusExec(args...)
 }
 
+// AddProxyDevice adds a proxy device to the container for forwarding connections
+// (e.g., Unix sockets). The connect string is the host side, listen is the container side.
+func (m *Manager) AddProxyDevice(name, connect, listen string, uid, gid int) error {
+	args := []string{
+		"config", "device", "add", m.ContainerName, name, "proxy",
+		fmt.Sprintf("connect=%s", connect),
+		fmt.Sprintf("listen=%s", listen),
+		"bind=container",
+		fmt.Sprintf("uid=%d", uid),
+		fmt.Sprintf("gid=%d", gid),
+		"mode=0600",
+	}
+	return IncusExec(args...)
+}
+
+// RemoveDevice removes a device from the container (silently ignores if not found)
+func (m *Manager) RemoveDevice(name string) error {
+	return IncusExecQuiet("config", "device", "remove", m.ContainerName, name)
+}
+
 // SetTmpfsSize configures the tmpfs size for /tmp in the container
 // size should be a string like "2GiB", "1024MiB", etc.
 func (m *Manager) SetTmpfsSize(size string) error {

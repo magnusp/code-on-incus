@@ -278,6 +278,77 @@ func TestGitConfigMerge(t *testing.T) {
 	}
 }
 
+func TestSSHConfigDefaults(t *testing.T) {
+	cfg := GetDefaultConfig()
+
+	if cfg.SSH.ForwardAgent == nil || *cfg.SSH.ForwardAgent {
+		t.Error("Expected default SSH.ForwardAgent to be false")
+	}
+}
+
+func TestSSHConfigMerge(t *testing.T) {
+	ptrBool := func(b bool) *bool { return &b }
+
+	tests := []struct {
+		name           string
+		baseForward    *bool
+		otherForward   *bool
+		expectedResult *bool
+	}{
+		{
+			name:           "false merged with true",
+			baseForward:    ptrBool(false),
+			otherForward:   ptrBool(true),
+			expectedResult: ptrBool(true),
+		},
+		{
+			name:           "true merged with false",
+			baseForward:    ptrBool(true),
+			otherForward:   ptrBool(false),
+			expectedResult: ptrBool(false),
+		},
+		{
+			name:           "false merged with nil (not set)",
+			baseForward:    ptrBool(false),
+			otherForward:   nil,
+			expectedResult: ptrBool(false),
+		},
+		{
+			name:           "true merged with nil (not set)",
+			baseForward:    ptrBool(true),
+			otherForward:   nil,
+			expectedResult: ptrBool(true),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := GetDefaultConfig()
+			base.SSH.ForwardAgent = tt.baseForward
+
+			other := &Config{
+				SSH: SSHConfig{
+					ForwardAgent: tt.otherForward,
+				},
+			}
+
+			base.Merge(other)
+
+			if tt.expectedResult == nil {
+				if base.SSH.ForwardAgent != nil {
+					t.Errorf("Expected SSH.ForwardAgent to be nil, got %v", *base.SSH.ForwardAgent)
+				}
+			} else {
+				if base.SSH.ForwardAgent == nil {
+					t.Errorf("Expected SSH.ForwardAgent to be %v, got nil", *tt.expectedResult)
+				} else if *base.SSH.ForwardAgent != *tt.expectedResult {
+					t.Errorf("Expected SSH.ForwardAgent to be %v, got %v", *tt.expectedResult, *base.SSH.ForwardAgent)
+				}
+			}
+		})
+	}
+}
+
 func TestToolConfigDefaults(t *testing.T) {
 	cfg := GetDefaultConfig()
 
