@@ -141,6 +141,9 @@ image = "coi"
 # Set persistent=true to reuse containers across sessions (keeps installed tools)
 persistent = false
 model = "claude-sonnet-4-5"
+# Forward host environment variables into the container by name
+# Values are read from the host at session start — never stored in config
+# forward_env = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN", "AWS_ACCESS_KEY_ID"]
 
 [paths]
 sessions_dir = "~/.coi/sessions"

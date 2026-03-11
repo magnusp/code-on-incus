@@ -269,7 +269,22 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		"--group", fmt.Sprintf("%d", container.CodeUID), "--cwd", containerWorkspacePath,
 	}
 
-	// Add environment variables from -e flags
+	// Add static environment from config (defaults.environment + profile environment)
+	for k, v := range cfg.Defaults.Environment {
+		incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Resolve forward_env: merge config + --forward-env flag, deduplicate, then look up host values
+	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
+	for _, name := range forwardNames {
+		if val := os.Getenv(name); val != "" {
+			incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", name, val))
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)
+		}
+	}
+
+	// Add environment variables from -e flags (highest priority — last wins)
 	for _, e := range envVars {
 		incusArgs = append(incusArgs, "--env", e)
 	}

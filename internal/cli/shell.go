@@ -515,8 +515,8 @@ func buildCLICommand(sessionID string, useResumeFlag, restoreOnly bool, sessions
 }
 
 // buildContainerEnv constructs the environment variables map and user pointer for container execution.
-// It sets HOME, TERM (sanitized), IS_SANDBOX, merges user-provided --env vars, and re-sanitizes TERM
-// if overridden.
+// It sets HOME, TERM (sanitized), IS_SANDBOX, merges config environment, resolves forward_env from
+// both config and --forward-env flag, merges user-provided --env vars, and re-sanitizes TERM if overridden.
 func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 	user := container.CodeUID
 	if result.RunAsRoot {
@@ -535,6 +535,21 @@ func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 		containerEnv["SSH_AUTH_SOCK"] = result.SSHAgentSocketPath
 	}
 
+	// Apply static environment from config (defaults.environment + profile environment)
+	for k, v := range cfg.Defaults.Environment {
+		containerEnv[k] = v
+	}
+
+	// Resolve forward_env: merge config + --forward-env flag, deduplicate, then look up host values
+	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
+	for _, name := range forwardNames {
+		if val := os.Getenv(name); val != "" {
+			containerEnv[name] = val
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)
+		}
+	}
+
 	// Merge user-provided --env vars
 	for _, e := range envVars {
 		parts := strings.SplitN(e, "=", 2)
@@ -549,6 +564,21 @@ func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 	}
 
 	return containerEnv, userPtr
+}
+
+// mergeStringSliceUnique appends items from other to base, skipping duplicates
+func mergeStringSliceUnique(base, other []string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, s := range base {
+		seen[s] = true
+	}
+	for _, s := range other {
+		if !seen[s] {
+			base = append(base, s)
+			seen[s] = true
+		}
+	}
+	return base
 }
 
 // ensureTmuxServer starts the tmux server and polls until it is ready (up to 2 seconds).

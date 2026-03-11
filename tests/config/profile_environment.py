@@ -1,0 +1,104 @@
+"""
+Test that profile environment variables are applied to container.
+
+Tests that:
+1. Profile environment map is applied when --profile is used
+2. Profile env vars are available inside the container
+"""
+
+import os
+import subprocess
+from pathlib import Path
+
+
+def test_profile_environment_applied(coi_binary, cleanup_containers, workspace_dir):
+    """
+    Test that [profiles.X] environment vars are injected into container.
+
+    Flow:
+    1. Create .coi.toml with a profile that has environment = { RUST_BACKTRACE = "1" }
+    2. Run coi run --profile rust -- sh -c 'echo $RUST_BACKTRACE'
+    3. Verify RUST_BACKTRACE is set to "1"
+    """
+    config_path = Path(workspace_dir) / ".coi.toml"
+    config_path.write_text(
+        """
+[profiles.rust]
+environment = { RUST_BACKTRACE = "full", MY_PROFILE_VAR = "profile-val-77" }
+"""
+    )
+
+    result = subprocess.run(
+        [
+            coi_binary,
+            "run",
+            "--workspace",
+            workspace_dir,
+            "--profile",
+            "rust",
+            "--",
+            "sh",
+            "-c",
+            "echo BT=$RUST_BACKTRACE PV=$MY_PROFILE_VAR",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        cwd=workspace_dir,
+    )
+
+    assert result.returncode == 0, f"Run should succeed. stderr: {result.stderr}"
+
+    combined_output = result.stdout + result.stderr
+    assert "BT=full" in combined_output, (
+        f"RUST_BACKTRACE should be set from profile. Got:\n{combined_output}"
+    )
+    assert "PV=profile-val-77" in combined_output, (
+        f"MY_PROFILE_VAR should be set from profile. Got:\n{combined_output}"
+    )
+
+
+def test_env_flag_overrides_profile_environment(coi_binary, cleanup_containers, workspace_dir):
+    """
+    Test that --env flag takes precedence over profile environment.
+
+    Flow:
+    1. Create profile with MY_VAR = "from-profile"
+    2. Run with --profile and -e MY_VAR=from-flag
+    3. Verify the flag value wins
+    """
+    config_path = Path(workspace_dir) / ".coi.toml"
+    config_path.write_text(
+        """
+[profiles.test]
+environment = { MY_VAR = "from-profile" }
+"""
+    )
+
+    result = subprocess.run(
+        [
+            coi_binary,
+            "run",
+            "--workspace",
+            workspace_dir,
+            "--profile",
+            "test",
+            "-e",
+            "MY_VAR=from-flag",
+            "--",
+            "sh",
+            "-c",
+            "echo $MY_VAR",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=180,
+        cwd=workspace_dir,
+    )
+
+    assert result.returncode == 0, f"Run should succeed. stderr: {result.stderr}"
+
+    combined_output = result.stdout + result.stderr
+    assert "from-flag" in combined_output, (
+        f"--env flag should override profile environment. Got:\n{combined_output}"
+    )
