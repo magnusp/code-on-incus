@@ -269,25 +269,8 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		"--group", fmt.Sprintf("%d", container.CodeUID), "--cwd", containerWorkspacePath,
 	}
 
-	// Add static environment from config (defaults.environment + profile environment)
-	for k, v := range cfg.Defaults.Environment {
-		incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", k, v))
-	}
-
-	// Resolve forward_env: merge config + --forward-env flag, deduplicate, then look up host values
-	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
-	for _, name := range forwardNames {
-		if val := os.Getenv(name); val != "" {
-			incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", name, val))
-		} else {
-			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)
-		}
-	}
-
-	// Add environment variables from -e flags (highest priority — last wins)
-	for _, e := range envVars {
-		incusArgs = append(incusArgs, "--env", e)
-	}
+	// Add all environment variables (config, forward_env, --env flags)
+	incusArgs = appendEnvArgs(incusArgs)
 
 	incusArgs = append(incusArgs, "--")
 	incusArgs = append(incusArgs, args...)
@@ -355,6 +338,32 @@ func remapContainerUserIfNeeded(mgr *container.Manager, img string, wasRestarted
 		return fmt.Errorf("failed to remap user %s to UID %d: %w", container.CodeUser, container.CodeUID, err)
 	}
 	return nil
+}
+
+// appendEnvArgs appends --env flags for config environment, forward_env, and --env CLI flags
+// to an incus exec args slice. Config env is lowest priority, --env flags are highest.
+func appendEnvArgs(incusArgs []string) []string {
+	// Static environment from config (defaults.environment + profile environment)
+	for k, v := range cfg.Defaults.Environment {
+		incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", k, v))
+	}
+
+	// Resolve forward_env: merge config + --forward-env flag, deduplicate, look up host values
+	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
+	for _, name := range forwardNames {
+		if val := os.Getenv(name); val != "" {
+			incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", name, val))
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)
+		}
+	}
+
+	// User-provided --env flags (highest priority — last wins)
+	for _, e := range envVars {
+		incusArgs = append(incusArgs, "--env", e)
+	}
+
+	return incusArgs
 }
 
 // hasAnyLimits checks if any limits are configured (used in run.go)
