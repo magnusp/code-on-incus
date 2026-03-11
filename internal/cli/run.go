@@ -349,9 +349,9 @@ func appendEnvArgs(incusArgs []string) []string {
 	}
 
 	// Resolve forward_env: merge config + --forward-env flag, deduplicate, look up host values
-	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
+	forwardNames := config.MergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
 	for _, name := range forwardNames {
-		if val := os.Getenv(name); val != "" {
+		if val, ok := os.LookupEnv(name); ok {
 			incusArgs = append(incusArgs, "--env", fmt.Sprintf("%s=%s", name, val))
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)

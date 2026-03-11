@@ -393,7 +393,7 @@ func (c *Config) Merge(other *Config) {
 
 	// Merge forward_env (append without duplicates)
 	if len(other.Defaults.ForwardEnv) > 0 {
-		c.Defaults.ForwardEnv = mergeStringSliceUnique(c.Defaults.ForwardEnv, other.Defaults.ForwardEnv)
+		c.Defaults.ForwardEnv = MergeStringSliceUnique(c.Defaults.ForwardEnv, other.Defaults.ForwardEnv)
 	}
 
 	// Merge environment (other takes precedence for overlapping keys)
@@ -624,8 +624,8 @@ func mergeMonitoring(base *MonitoringConfig, other *MonitoringConfig) {
 	}
 }
 
-// mergeStringSliceUnique appends items from other to base, skipping duplicates
-func mergeStringSliceUnique(base, other []string) []string {
+// MergeStringSliceUnique appends items from other to base, skipping duplicates
+func MergeStringSliceUnique(base, other []string) []string {
 	seen := make(map[string]bool, len(base))
 	for _, s := range base {
 		seen[s] = true
