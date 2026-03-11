@@ -574,23 +574,22 @@ Config file: `~/.config/coi/config.toml`
 [defaults]
 image = "coi"
 persistent = true
-mount_claude_config = true
+# forward_env = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]  # Forward host env vars (never stored)
 
 [tool]
-name = "claude"  # AI coding tool to use: "claude" (default) or "opencode"
+name = "claude"  # AI coding tool to use: "claude", "opencode", "aider"
 permission_mode = "bypass"  # "bypass" (default) or "interactive"
 # binary = "claude"  # Optional: override binary name
 
 [paths]
-# Note: sessions_dir is deprecated - tool-specific dirs are now used automatically
-# (e.g., ~/.coi/sessions-claude/, ~/.coi/sessions-aider/)
-sessions_dir = "~/.coi/sessions"  # Legacy path (not used for new sessions)
+sessions_dir = "~/.coi/sessions"
 storage_dir = "~/.coi/storage"
+# preserve_workspace_path = true  # Mount at same path as host instead of /workspace
 
 [incus]
 project = "default"
 group = "incus-admin"
-claude_uid = 1000
+code_uid = 1000
 
 [profiles.rust]
 image = "coi-rust"
@@ -598,13 +597,38 @@ environment = { RUST_BACKTRACE = "1" }
 persistent = true
 ```
 
+See the [Configuration wiki page](https://github.com/mensfeld/code-on-incus/wiki/Configuration) for the full config reference, per-repo setup, and environment variables.
+
 **Configuration hierarchy** (highest precedence last):
 1. Built-in defaults
 2. System config (`/etc/coi/config.toml`)
 3. User config (`~/.config/coi/config.toml`)
 4. Project config (`./.coi.toml`)
-5. CLI flags
+5. `COI_CONFIG` environment variable (path to a custom config file)
+6. Environment variables (`CLAUDE_ON_INCUS_*`, `COI_*`)
+7. CLI flags
 
+### Per-Repository Configuration
+
+Place a `.coi.toml` file in any repository root to auto-configure COI for that project. Only the fields you set are overridden — everything else inherits from your user and system defaults.
+
+```toml
+# my-project/.coi.toml — project-specific overrides
+[defaults]
+image = "coi-rust"
+persistent = true
+
+[defaults.environment]
+RUST_BACKTRACE = "1"
+
+[limits.cpu]
+count = "4"
+
+[limits.memory]
+limit = "4GiB"
+```
+
+This is useful for teams: commit `.coi.toml` to the repo so every developer gets the same container image, environment, and resource limits without touching their personal config.
 
 ## Resource and Time Limits
 
