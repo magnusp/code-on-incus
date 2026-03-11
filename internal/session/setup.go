@@ -874,8 +874,8 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 // SSH agent socket into the container. This allows git operations inside the
 // container to use the host's SSH keys without copying them.
 func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logger func(string)) error {
-	hostSocket := os.Getenv("SSH_AUTH_SOCK")
-	if hostSocket == "" {
+	hostSocket := filepath.Clean(os.Getenv("SSH_AUTH_SOCK"))
+	if hostSocket == "." || hostSocket == "" {
 		logger("SSH agent forwarding skipped: SSH_AUTH_SOCK not set on host")
 		return nil
 	}
