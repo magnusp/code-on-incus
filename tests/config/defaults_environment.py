@@ -6,7 +6,6 @@ Tests that:
 2. --env flag takes precedence over defaults.environment
 """
 
-import os
 import subprocess
 from pathlib import Path
 

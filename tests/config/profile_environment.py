@@ -6,7 +6,6 @@ Tests that:
 2. Profile env vars are available inside the container
 """
 
-import os
 import subprocess
 from pathlib import Path
 
