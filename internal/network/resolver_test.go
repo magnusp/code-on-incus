@@ -5,7 +5,10 @@ import (
 )
 
 func TestResolveDomain_RawIPv4(t *testing.T) {
-	resolver := NewResolver(&IPCache{Domains: make(map[string][]string)})
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
 
 	tests := []struct {
 		name    string
@@ -62,8 +65,29 @@ func TestResolveDomain_RawIPv4(t *testing.T) {
 	}
 }
 
+func TestResolveDomain_RawIPv4_SetsTTLZero(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+
+	_, err := resolver.ResolveDomain("8.8.8.8")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if ttl, ok := resolver.DomainTTLs["8.8.8.8"]; !ok {
+		t.Error("DomainTTLs should contain entry for raw IP")
+	} else if ttl != 0 {
+		t.Errorf("Expected TTL=0 for raw IP, got %d", ttl)
+	}
+}
+
 func TestResolveDomain_DomainName(t *testing.T) {
-	resolver := NewResolver(&IPCache{Domains: make(map[string][]string)})
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
 
 	// Test with a real domain that should resolve
 	ips, err := resolver.ResolveDomain("example.com")
@@ -80,5 +104,133 @@ func TestResolveDomain_DomainName(t *testing.T) {
 		if ip == "" {
 			t.Error("ResolveDomain returned empty IP string")
 		}
+	}
+}
+
+func TestResolveDomain_DomainName_SetsTTL(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+
+	_, err := resolver.ResolveDomain("example.com")
+	if err != nil {
+		t.Skipf("DNS resolution not available: %v", err)
+	}
+
+	// TTL should be set (either from QueryDNS or 0 from fallback)
+	if _, ok := resolver.DomainTTLs["example.com"]; !ok {
+		t.Error("DomainTTLs should contain entry for resolved domain")
+	}
+}
+
+func TestGetMinTTL_Empty(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+
+	if got := resolver.GetMinTTL(); got != 0 {
+		t.Errorf("GetMinTTL() = %d, want 0 for empty DomainTTLs", got)
+	}
+}
+
+func TestGetMinTTL_AllZero(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+	resolver.DomainTTLs["8.8.8.8"] = 0
+	resolver.DomainTTLs["1.1.1.1"] = 0
+
+	if got := resolver.GetMinTTL(); got != 0 {
+		t.Errorf("GetMinTTL() = %d, want 0 when all TTLs are zero", got)
+	}
+}
+
+func TestGetMinTTL_MixedTTLs(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+	resolver.DomainTTLs["8.8.8.8"] = 0          // Raw IP, should be ignored
+	resolver.DomainTTLs["example.com"] = 300    // 5 minutes
+	resolver.DomainTTLs["cdn.example.com"] = 60 // 1 minute
+
+	if got := resolver.GetMinTTL(); got != 60 {
+		t.Errorf("GetMinTTL() = %d, want 60", got)
+	}
+}
+
+func TestGetMinTTL_SingleDomain(t *testing.T) {
+	resolver := NewResolver(&IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	})
+	resolver.DomainTTLs["example.com"] = 180
+
+	if got := resolver.GetMinTTL(); got != 180 {
+		t.Errorf("GetMinTTL() = %d, want 180", got)
+	}
+}
+
+func TestUpdateCache_StoresTTLs(t *testing.T) {
+	cache := &IPCache{
+		Domains: make(map[string][]string),
+		TTLs:    make(map[string]uint32),
+	}
+	resolver := NewResolver(cache)
+
+	// Simulate resolved TTLs
+	resolver.DomainTTLs["example.com"] = 300
+	resolver.DomainTTLs["cdn.example.com"] = 60
+
+	newIPs := map[string][]string{
+		"example.com":     {"93.184.216.34"},
+		"cdn.example.com": {"1.2.3.4"},
+	}
+
+	resolver.UpdateCache(newIPs)
+
+	// Verify TTLs were stored in cache
+	if cache.TTLs == nil {
+		t.Fatal("Cache TTLs should not be nil after UpdateCache")
+	}
+
+	if ttl, ok := cache.TTLs["example.com"]; !ok || ttl != 300 {
+		t.Errorf("Cache TTL for example.com = %d, want 300", ttl)
+	}
+
+	if ttl, ok := cache.TTLs["cdn.example.com"]; !ok || ttl != 60 {
+		t.Errorf("Cache TTL for cdn.example.com = %d, want 60", ttl)
+	}
+
+	// Verify LastUpdate was set
+	if cache.LastUpdate.IsZero() {
+		t.Error("Cache LastUpdate should not be zero after UpdateCache")
+	}
+}
+
+func TestResolveAll_UsesCachedTTL(t *testing.T) {
+	cache := &IPCache{
+		Domains: map[string][]string{
+			"nonexistent.example.invalid": {"1.2.3.4"},
+		},
+		TTLs: map[string]uint32{
+			"nonexistent.example.invalid": 120,
+		},
+	}
+	resolver := NewResolver(cache)
+
+	// This domain won't resolve, so it should fall back to cache
+	results, _ := resolver.ResolveAll([]string{"nonexistent.example.invalid"})
+
+	if len(results) == 0 {
+		t.Skip("No cached results returned")
+	}
+
+	// Should preserve cached TTL
+	if ttl, ok := resolver.DomainTTLs["nonexistent.example.invalid"]; !ok || ttl != 120 {
+		t.Errorf("Expected cached TTL 120, got %d", ttl)
 	}
 }

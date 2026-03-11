@@ -177,6 +177,7 @@ func (m *Manager) setupAllowlist(ctx context.Context, containerName string) erro
 		log.Printf("Warning: Failed to load cache: %v", err)
 		cache = &IPCache{
 			Domains:    make(map[string][]string),
+			TTLs:       make(map[string]uint32),
 			LastUpdate: time.Time{},
 		}
 	}
@@ -217,8 +218,11 @@ func (m *Manager) setupAllowlist(ctx context.Context, containerName string) erro
 	log.Println("  Blocking all RFC1918 private networks")
 	log.Println("  Blocking cloud metadata endpoints")
 
-	// Start background refresher
-	m.startRefresher(ctx)
+	// Compute initial refresh interval from DNS TTLs
+	minTTL := m.resolver.GetMinTTL()
+
+	// Start background refresher with TTL-aware interval
+	m.startRefresher(ctx, minTTL)
 
 	return nil
 }
@@ -239,8 +243,28 @@ func collectUniqueIPs(domainIPs map[string][]string) []string {
 	return result
 }
 
-// startRefresher starts the background IP refresh goroutine
-func (m *Manager) startRefresher(ctx context.Context) {
+// computeRefreshInterval determines the refresh interval based on DNS TTL and config cap.
+// The configured refresh_interval_minutes acts as a maximum cap.
+// If minTTL is 0 (unknown), the config interval is used as-is.
+func (m *Manager) computeRefreshInterval(minTTL uint32) time.Duration {
+	configInterval := time.Duration(m.config.RefreshIntervalMinutes) * time.Minute
+
+	if minTTL == 0 {
+		return configInterval
+	}
+
+	ttlInterval := time.Duration(minTTL) * time.Second
+
+	if ttlInterval < configInterval {
+		return ttlInterval
+	}
+
+	return configInterval
+}
+
+// startRefresher starts the background IP refresh goroutine with TTL-aware scheduling.
+// It uses time.Timer instead of time.Ticker to allow dynamic rescheduling after each refresh.
+func (m *Manager) startRefresher(ctx context.Context, initialMinTTL uint32) {
 	if m.config.RefreshIntervalMinutes <= 0 {
 		log.Println("IP refresh disabled (refresh_interval_minutes <= 0)")
 		return
@@ -248,21 +272,27 @@ func (m *Manager) startRefresher(ctx context.Context) {
 
 	m.refreshCtx, m.refreshCancel = context.WithCancel(ctx)
 
-	interval := time.Duration(m.config.RefreshIntervalMinutes) * time.Minute
-	ticker := time.NewTicker(interval)
+	interval := m.computeRefreshInterval(initialMinTTL)
+	timer := time.NewTimer(interval)
 
-	log.Printf("Starting IP refresh every %d minutes", m.config.RefreshIntervalMinutes)
+	log.Printf("Starting IP refresh (interval: %s, TTL-based: %v)", interval, initialMinTTL > 0)
 
 	go func() {
-		defer ticker.Stop()
+		defer timer.Stop()
 
 		for {
 			select {
-			case <-ticker.C:
+			case <-timer.C:
 				log.Println("IP refresh: checking for updated IPs...")
-				if err := m.refreshAllowedIPs(); err != nil {
+				newMinTTL, err := m.refreshAllowedIPs()
+				if err != nil {
 					log.Printf("Warning: IP refresh failed: %v", err)
 				}
+
+				// Recompute interval from new TTLs
+				nextInterval := m.computeRefreshInterval(newMinTTL)
+				log.Printf("IP refresh: next check in %s", nextInterval)
+				timer.Reset(nextInterval)
 
 			case <-m.refreshCtx.Done():
 				log.Println("IP refresher stopped")
@@ -280,18 +310,21 @@ func (m *Manager) stopRefresher() {
 	}
 }
 
-// refreshAllowedIPs refreshes domain IPs and updates firewall rules if changed
-func (m *Manager) refreshAllowedIPs() error {
+// refreshAllowedIPs refreshes domain IPs and updates firewall rules if changed.
+// Returns the minimum TTL from the new resolution for rescheduling.
+func (m *Manager) refreshAllowedIPs() (uint32, error) {
 	// Resolve all domains again
 	newIPs, err := m.resolver.ResolveAll(m.config.AllowedDomains)
 	if err != nil && len(newIPs) == 0 {
-		return fmt.Errorf("failed to resolve any domains")
+		return 0, fmt.Errorf("failed to resolve any domains")
 	}
+
+	newMinTTL := m.resolver.GetMinTTL()
 
 	// Check if anything changed
 	if m.resolver.IPsUnchanged(newIPs) {
 		log.Println("IP refresh: no changes detected")
-		return nil
+		return newMinTTL, nil
 	}
 
 	// Update firewall rules with new IPs
@@ -305,7 +338,7 @@ func (m *Manager) refreshAllowedIPs() error {
 
 	allowedIPs := collectUniqueIPs(newIPs)
 	if err := m.firewall.ApplyAllowlist(m.config, allowedIPs); err != nil {
-		return fmt.Errorf("failed to update firewall rules: %w", err)
+		return newMinTTL, fmt.Errorf("failed to update firewall rules: %w", err)
 	}
 
 	// Update cache
@@ -315,7 +348,7 @@ func (m *Manager) refreshAllowedIPs() error {
 	}
 
 	log.Printf("IP refresh: successfully updated firewall rules")
-	return nil
+	return newMinTTL, nil
 }
 
 // countIPs counts total IPs across all domains
