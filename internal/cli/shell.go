@@ -541,9 +541,9 @@ func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 	}
 
 	// Resolve forward_env: merge config + --forward-env flag, deduplicate, then look up host values
-	forwardNames := mergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
+	forwardNames := config.MergeStringSliceUnique(cfg.Defaults.ForwardEnv, forwardEnvVars)
 	for _, name := range forwardNames {
-		if val := os.Getenv(name); val != "" {
+		if val, ok := os.LookupEnv(name); ok {
 			containerEnv[name] = val
 		} else {
 			fmt.Fprintf(os.Stderr, "Warning: forward_env variable %q is not set on host, skipping\n", name)
@@ -564,21 +564,6 @@ func buildContainerEnv(result *session.SetupResult) (map[string]string, *int) {
 	}
 
 	return containerEnv, userPtr
-}
-
-// mergeStringSliceUnique appends items from other to base, skipping duplicates
-func mergeStringSliceUnique(base, other []string) []string {
-	seen := make(map[string]bool, len(base))
-	for _, s := range base {
-		seen[s] = true
-	}
-	for _, s := range other {
-		if !seen[s] {
-			base = append(base, s)
-			seen[s] = true
-		}
-	}
-	return base
 }
 
 // ensureTmuxServer starts the tmux server and polls until it is ready (up to 2 seconds).
