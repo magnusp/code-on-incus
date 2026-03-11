@@ -1135,6 +1135,64 @@ def wait_for_pattern_in_monitor(monitor, pattern, timeout=30, poll_interval=0.5)
     return None
 
 
+def wait_for_firewall_rules(container_name, timeout=30, poll_interval=0.5):
+    """
+    Poll firewalld until the default-deny REJECT rule is active for a container.
+
+    Queries ``firewall-cmd --direct --get-all-rules`` and looks for the
+    priority-99 ``0.0.0.0/0 REJECT`` rule whose source matches the
+    container's IP.  Returns ``True`` once the rule appears, or ``False``
+    on timeout.
+
+    Args:
+        container_name: Incus container name (used to look up the IP).
+        timeout: Maximum seconds to wait (default 30).
+        poll_interval: Seconds between polls (default 0.5).
+    """
+    # Resolve the container's IPv4 address once.
+    ip_result = subprocess.run(
+        ["incus", "list", container_name, "--format=json"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+    )
+    if ip_result.returncode != 0:
+        return False
+
+    import json as _json
+
+    info = _json.loads(ip_result.stdout)
+    if not info:
+        return False
+
+    container_ip = None
+    for addr in info[0].get("state", {}).get("network", {}).get("eth0", {}).get("addresses", []):
+        if addr.get("family") == "inet":
+            container_ip = addr["address"]
+            break
+
+    if not container_ip:
+        return False
+
+    # Poll for the default-deny rule.
+    start = time.time()
+    while time.time() - start < timeout:
+        result = subprocess.run(
+            ["sudo", "-n", "firewall-cmd", "--direct", "--get-all-rules"],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if result.returncode == 0:
+            for line in result.stdout.splitlines():
+                # Match: ipv4 filter FORWARD 99 -s <container_ip> -d 0.0.0.0/0 -j REJECT
+                if container_ip in line and "0.0.0.0/0" in line and "REJECT" in line:
+                    return True
+        time.sleep(poll_interval)
+
+    return False
+
+
 def get_screen_display(child, refresh=False, clear_buffer=False):
     """
     Get the current rendered screen display.
