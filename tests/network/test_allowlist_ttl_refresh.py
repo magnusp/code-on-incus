@@ -52,17 +52,13 @@ refresh_interval_minutes = 30
 
         # TTL information should appear in stderr (log output)
         output = result.stdout + result.stderr
-        assert "TTL" in output, (
-            f"Expected TTL information in log output, got: {output}"
-        )
+        assert "TTL" in output, f"Expected TTL information in log output, got: {output}"
 
     finally:
         os.unlink(config_file)
 
 
-def test_allowlist_logs_dynamic_refresh_interval(
-    coi_binary, workspace_dir, cleanup_containers
-):
+def test_allowlist_logs_dynamic_refresh_interval(coi_binary, workspace_dir, cleanup_containers):
     """
     Test that allowlist mode logs the dynamic refresh interval.
 
@@ -204,12 +200,8 @@ refresh_interval_minutes = 30
             timeout=15,
         )
 
-        assert result.returncode == 0, (
-            f"Failed to reach allowed domain: {result.stderr}"
-        )
-        assert "HTTP" in result.stderr, (
-            f"No HTTP response from allowed domain: {result.stderr}"
-        )
+        assert result.returncode == 0, f"Failed to reach allowed domain: {result.stderr}"
+        assert "HTTP" in result.stderr, f"No HTTP response from allowed domain: {result.stderr}"
 
     finally:
         os.unlink(config_file)
