@@ -668,6 +668,114 @@ func TestPermissionModeMerge(t *testing.T) {
 	}
 }
 
+func TestForwardEnvDefaults(t *testing.T) {
+	cfg := GetDefaultConfig()
+
+	if len(cfg.Defaults.ForwardEnv) != 0 {
+		t.Errorf("Expected default ForwardEnv to be empty, got %v", cfg.Defaults.ForwardEnv)
+	}
+	if len(cfg.Defaults.Environment) != 0 {
+		t.Errorf("Expected default Environment to be empty/nil, got %v", cfg.Defaults.Environment)
+	}
+}
+
+func TestForwardEnvMerge(t *testing.T) {
+	tests := []struct {
+		name     string
+		base     []string
+		other    []string
+		expected []string
+	}{
+		{
+			name:     "empty base, non-empty other",
+			base:     nil,
+			other:    []string{"A", "B"},
+			expected: []string{"A", "B"},
+		},
+		{
+			name:     "non-empty base, empty other (preserved)",
+			base:     []string{"A"},
+			other:    nil,
+			expected: []string{"A"},
+		},
+		{
+			name:     "overlapping lists are deduplicated",
+			base:     []string{"A", "B"},
+			other:    []string{"B", "C"},
+			expected: []string{"A", "B", "C"},
+		},
+		{
+			name:     "both empty stays empty",
+			base:     nil,
+			other:    nil,
+			expected: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := GetDefaultConfig()
+			base.Defaults.ForwardEnv = tt.base
+
+			other := &Config{
+				Defaults: DefaultsConfig{
+					ForwardEnv: tt.other,
+				},
+			}
+
+			base.Merge(other)
+
+			if len(base.Defaults.ForwardEnv) != len(tt.expected) {
+				t.Fatalf("ForwardEnv length: expected %d, got %d (%v)", len(tt.expected), len(base.Defaults.ForwardEnv), base.Defaults.ForwardEnv)
+			}
+			for i, v := range tt.expected {
+				if base.Defaults.ForwardEnv[i] != v {
+					t.Errorf("ForwardEnv[%d]: expected %q, got %q", i, v, base.Defaults.ForwardEnv[i])
+				}
+			}
+		})
+	}
+}
+
+func TestEnvironmentMerge(t *testing.T) {
+	base := GetDefaultConfig()
+	base.Defaults.Environment = map[string]string{"A": "1", "B": "2"}
+
+	other := &Config{
+		Defaults: DefaultsConfig{
+			Environment: map[string]string{"B": "override", "C": "3"},
+		},
+	}
+
+	base.Merge(other)
+
+	expected := map[string]string{"A": "1", "B": "override", "C": "3"}
+	for k, v := range expected {
+		if base.Defaults.Environment[k] != v {
+			t.Errorf("Environment[%q]: expected %q, got %q", k, v, base.Defaults.Environment[k])
+		}
+	}
+}
+
+func TestApplyProfileEnvironment(t *testing.T) {
+	cfg := GetDefaultConfig()
+	cfg.Profiles["test"] = ProfileConfig{
+		Environment: map[string]string{"RUST_BACKTRACE": "1", "FOO": "bar"},
+	}
+
+	cfg.ApplyProfile("test")
+
+	if cfg.Defaults.Environment == nil {
+		t.Fatal("Expected Environment to be set after ApplyProfile")
+	}
+	if cfg.Defaults.Environment["RUST_BACKTRACE"] != "1" {
+		t.Errorf("Expected RUST_BACKTRACE=1, got %q", cfg.Defaults.Environment["RUST_BACKTRACE"])
+	}
+	if cfg.Defaults.Environment["FOO"] != "bar" {
+		t.Errorf("Expected FOO=bar, got %q", cfg.Defaults.Environment["FOO"])
+	}
+}
+
 func TestPreserveWorkspacePathMerge(t *testing.T) {
 	tests := []struct {
 		name     string

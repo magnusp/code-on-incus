@@ -4,6 +4,7 @@
 
 ### Features
 
+- [Feature] **Environment variable forwarding** — Forward host environment variables into containers by name using `forward_env = ["ANTHROPIC_API_KEY", "GITHUB_TOKEN"]` in the `[defaults]` config section, or per-session with `--forward-env ANTHROPIC_API_KEY,GITHUB_TOKEN`. Values are read from the host at session start and never stored in config files. Also wires up the previously unused `ProfileConfig.Environment` so profile-level env vars (e.g., `environment = { RUST_BACKTRACE = "1" }`) are now applied to the container.
 - [Feature] **SSH agent forwarding** — Forward the host's SSH agent into containers so git-over-SSH works without copying private keys. The host's `SSH_AUTH_SOCK` is bridged into the container at `/tmp/ssh-agent.sock` via an Incus proxy device. Enable per-session with `coi shell --ssh-agent` or permanently with `forward_agent = true` under `[ssh]` in config. Disabled by default. Includes automatic retry logic to handle an Incus race condition where proxy devices on freshly-launched containers may not create the listen socket immediately. Includes integration tests for end-to-end forwarding, graceful skip on missing socket, invalid socket path, and device replacement on persistent containers.
 
 ## 0.7.0 (2026-03-10)

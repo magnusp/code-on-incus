@@ -27,6 +27,9 @@ var (
 	// Git security flag
 	writableGitHooks bool
 
+	// Forward env vars by name
+	forwardEnvVars []string
+
 	// SSH agent forwarding flag
 	sshAgent bool
 
@@ -127,6 +130,8 @@ func init() {
 		"Allow container to write to .git/hooks (disables security protection)")
 	rootCmd.PersistentFlags().BoolVar(&enableMonitoring, "monitor", false,
 		"Enable security monitoring with automatic threat response")
+	rootCmd.PersistentFlags().StringSliceVar(&forwardEnvVars, "forward-env", []string{},
+		"Forward host environment variables by name (e.g., ANTHROPIC_API_KEY,GITHUB_TOKEN)")
 	rootCmd.PersistentFlags().BoolVar(&sshAgent, "ssh-agent", false,
 		"Forward host SSH agent to container (for git over SSH)")
 

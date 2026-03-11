@@ -67,9 +67,11 @@ func DefaultProtectedPaths() []string {
 
 // DefaultsConfig contains default settings
 type DefaultsConfig struct {
-	Image      string `toml:"image"`
-	Persistent *bool  `toml:"persistent"`
-	Model      string `toml:"model"`
+	Image       string            `toml:"image"`
+	Persistent  *bool             `toml:"persistent"`
+	Model       string            `toml:"model"`
+	ForwardEnv  []string          `toml:"forward_env"`
+	Environment map[string]string `toml:"environment"`
 }
 
 // PathsConfig contains path settings
@@ -389,6 +391,21 @@ func (c *Config) Merge(other *Config) {
 		c.Defaults.Persistent = other.Defaults.Persistent
 	}
 
+	// Merge forward_env (append without duplicates)
+	if len(other.Defaults.ForwardEnv) > 0 {
+		c.Defaults.ForwardEnv = mergeStringSliceUnique(c.Defaults.ForwardEnv, other.Defaults.ForwardEnv)
+	}
+
+	// Merge environment (other takes precedence for overlapping keys)
+	if len(other.Defaults.Environment) > 0 {
+		if c.Defaults.Environment == nil {
+			c.Defaults.Environment = make(map[string]string)
+		}
+		for k, v := range other.Defaults.Environment {
+			c.Defaults.Environment[k] = v
+		}
+	}
+
 	// Merge paths
 	if other.Paths.SessionsDir != "" {
 		c.Paths.SessionsDir = ExpandPath(other.Paths.SessionsDir)
@@ -607,6 +624,21 @@ func mergeMonitoring(base *MonitoringConfig, other *MonitoringConfig) {
 	}
 }
 
+// mergeStringSliceUnique appends items from other to base, skipping duplicates
+func mergeStringSliceUnique(base, other []string) []string {
+	seen := make(map[string]bool, len(base))
+	for _, s := range base {
+		seen[s] = true
+	}
+	for _, s := range other {
+		if !seen[s] {
+			base = append(base, s)
+			seen[s] = true
+		}
+	}
+	return base
+}
+
 // GetProfile returns a profile by name, or nil if not found
 func (c *Config) GetProfile(name string) *ProfileConfig {
 	if profile, ok := c.Profiles[name]; ok {
@@ -627,6 +659,16 @@ func (c *Config) ApplyProfile(name string) bool {
 	}
 	if profile.Persistent != nil {
 		c.Defaults.Persistent = profile.Persistent
+	}
+
+	// Apply profile environment if present
+	if len(profile.Environment) > 0 {
+		if c.Defaults.Environment == nil {
+			c.Defaults.Environment = make(map[string]string)
+		}
+		for k, v := range profile.Environment {
+			c.Defaults.Environment[k] = v
+		}
 	}
 
 	// Apply profile limits if present
