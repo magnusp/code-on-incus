@@ -432,10 +432,11 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 
 	// 6.6. Setup SSH agent forwarding (proxy device must be added to running container)
 	if opts.ForwardSSHAgent {
-		if err := setupSSHAgentForwarding(result.Manager, result.ContainerName, opts.Logger); err != nil {
+		socketPath, err := setupSSHAgentForwarding(result.Manager, result.ContainerName, opts.Logger)
+		if err != nil {
 			opts.Logger(fmt.Sprintf("Warning: SSH agent forwarding failed: %v", err))
-		} else if os.Getenv("SSH_AUTH_SOCK") != "" {
-			result.SSHAgentSocketPath = "/tmp/ssh-agent.sock"
+		} else if socketPath != "" {
+			result.SSHAgentSocketPath = socketPath
 		}
 	}
 
@@ -873,17 +874,19 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 // setupSSHAgentForwarding configures an Incus proxy device to forward the host's
 // SSH agent socket into the container. This allows git operations inside the
 // container to use the host's SSH keys without copying them.
-func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logger func(string)) error {
+// Returns the container socket path if forwarding was successfully configured,
+// or an empty string if forwarding was skipped (no SSH_AUTH_SOCK, invalid socket).
+func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logger func(string)) (string, error) {
 	hostSocket := filepath.Clean(os.Getenv("SSH_AUTH_SOCK"))
 	if hostSocket == "." || hostSocket == "" {
 		logger("SSH agent forwarding skipped: SSH_AUTH_SOCK not set on host")
-		return nil
+		return "", nil
 	}
 
 	// Verify the socket exists
 	if _, err := os.Stat(hostSocket); err != nil {
 		logger(fmt.Sprintf("SSH agent forwarding skipped: socket %s not accessible: %v", hostSocket, err))
-		return nil
+		return "", nil
 	}
 
 	containerSocket := "/tmp/ssh-agent.sock"
@@ -894,7 +897,7 @@ func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logge
 	logger(fmt.Sprintf("Forwarding SSH agent: %s -> %s", hostSocket, containerSocket))
 
 	if err := addSSHAgentProxyDevice(mgr, hostSocket, containerSocket); err != nil {
-		return fmt.Errorf("failed to add SSH agent proxy device: %w", err)
+		return "", fmt.Errorf("failed to add SSH agent proxy device: %w", err)
 	}
 
 	// Verify the socket appears inside the container. Incus proxy devices can
@@ -902,21 +905,22 @@ func setupSSHAgentForwarding(mgr *container.Manager, containerName string, logge
 	// containers. If the socket doesn't appear, retry with a remove+re-add
 	// which works around an Incus race condition.
 	if waitForContainerSocket(mgr, containerSocket, 5*time.Second) {
-		return nil
+		return containerSocket, nil
 	}
 
 	logger("SSH agent socket not yet available, retrying device setup...")
 	_ = mgr.RemoveDevice("ssh-agent")
 
 	if err := addSSHAgentProxyDevice(mgr, hostSocket, containerSocket); err != nil {
-		return fmt.Errorf("failed to re-add SSH agent proxy device: %w", err)
+		return "", fmt.Errorf("failed to re-add SSH agent proxy device: %w", err)
 	}
 
 	if !waitForContainerSocket(mgr, containerSocket, 5*time.Second) {
 		logger("Warning: SSH agent socket did not appear in container after retry")
+		return "", nil
 	}
 
-	return nil
+	return containerSocket, nil
 }
 
 // addSSHAgentProxyDevice adds the proxy device for SSH agent forwarding.

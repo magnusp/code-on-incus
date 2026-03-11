@@ -128,8 +128,12 @@ func TestSSHAgentForwarding_EndToEnd(t *testing.T) {
 	// Proxy devices must be added to running containers to work
 	t.Setenv("SSH_AUTH_SOCK", agentSocket)
 	logger := func(msg string) { t.Logf("[ssh-agent] %s", msg) }
-	if err := setupSSHAgentForwarding(mgr, containerName, logger); err != nil {
+	socketPath, err := setupSSHAgentForwarding(mgr, containerName, logger)
+	if err != nil {
 		t.Fatalf("setupSSHAgentForwarding failed: %v", err)
+	}
+	if socketPath == "" {
+		t.Fatal("setupSSHAgentForwarding returned empty socket path, expected forwarding to be configured")
 	}
 
 	// 4. Wait for socket to appear (proxy device may take a moment)
@@ -201,9 +205,12 @@ func TestSSHAgentForwarding_NoSocket(t *testing.T) {
 		t.Logf("[ssh-agent] %s", msg)
 	}
 
-	err := setupSSHAgentForwarding(mgr, containerName, logger)
+	socketPath, err := setupSSHAgentForwarding(mgr, containerName, logger)
 	if err != nil {
 		t.Errorf("Expected no error when SSH_AUTH_SOCK is empty, got: %v", err)
+	}
+	if socketPath != "" {
+		t.Errorf("Expected empty socket path when SSH_AUTH_SOCK is empty, got: %s", socketPath)
 	}
 
 	found := false
@@ -249,9 +256,12 @@ func TestSSHAgentForwarding_InvalidSocket(t *testing.T) {
 		t.Logf("[ssh-agent] %s", msg)
 	}
 
-	err := setupSSHAgentForwarding(mgr, containerName, logger)
+	socketPath, err := setupSSHAgentForwarding(mgr, containerName, logger)
 	if err != nil {
 		t.Errorf("Expected no error when socket doesn't exist, got: %v", err)
+	}
+	if socketPath != "" {
+		t.Errorf("Expected empty socket path when socket doesn't exist, got: %s", socketPath)
 	}
 
 	found := false
@@ -282,12 +292,12 @@ func TestSSHAgentForwarding_DeviceReplace(t *testing.T) {
 	logger := func(msg string) { t.Logf("[ssh-agent] %s", msg) }
 
 	// First call - add device to running container
-	if err := setupSSHAgentForwarding(mgr, containerName, logger); err != nil {
+	if _, err := setupSSHAgentForwarding(mgr, containerName, logger); err != nil {
 		t.Fatalf("First setupSSHAgentForwarding failed: %v", err)
 	}
 
 	// Second call - should remove and re-add device without error
-	if err := setupSSHAgentForwarding(mgr, containerName, logger); err != nil {
+	if _, err := setupSSHAgentForwarding(mgr, containerName, logger); err != nil {
 		t.Fatalf("Second setupSSHAgentForwarding failed: %v", err)
 	}
 
