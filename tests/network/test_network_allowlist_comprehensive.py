@@ -9,8 +9,11 @@ Network isolation is implemented using firewalld direct rules.
 
 import os
 import subprocess
+import sys
 import tempfile
-import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from support.helpers import wait_for_firewall_rules
 
 
 def test_allowlist_allows_specified_domains(coi_binary, workspace_dir, cleanup_containers):
@@ -174,9 +177,10 @@ refresh_interval_minutes = 30
             timeout=10,
         )
 
-        # Wait for firewall rules to be fully applied (CI timing issue)
-        # Use longer delay (5s) as firewalld rule propagation can be slow in CI
-        time.sleep(5)
+        # Wait for firewall rules to be fully applied (poll for default-deny rule)
+        assert wait_for_firewall_rules(container_name, timeout=30), (
+            "Firewall default-deny rule was not applied in time"
+        )
 
         # Test: curl example.com (NOT in allowlist, should fail)
         result = subprocess.run(
@@ -278,9 +282,10 @@ refresh_interval_minutes = 30
 
         assert container_name, f"Could not find container name in output: {output}"
 
-        # Wait for firewall rules to be fully applied (CI timing issue)
-        # Use longer delay (5s) as firewalld rule propagation can be slow in CI
-        time.sleep(5)
+        # Wait for firewall rules to be fully applied (poll for default-deny rule)
+        assert wait_for_firewall_rules(container_name, timeout=30), (
+            "Firewall default-deny rule was not applied in time"
+        )
 
         # Test: attempt connection to 10.0.0.1 (even though in allowlist)
         result = subprocess.run(
@@ -463,9 +468,10 @@ refresh_interval_minutes = 30
 
         assert container_name, f"Could not find container name in output: {output}"
 
-        # Wait for firewall rules to be fully applied (CI timing issue)
-        # Use longer delay (5s) as firewalld rule propagation can be slow in CI
-        time.sleep(5)
+        # Wait for firewall rules to be fully applied (poll for default-deny rule)
+        assert wait_for_firewall_rules(container_name, timeout=30), (
+            "Firewall default-deny rule was not applied in time"
+        )
 
         # Test: nslookup query to Quad9 DNS 9.9.9.9 (NOT in allowlist, should fail)
         result = subprocess.run(

@@ -9,8 +9,12 @@ Network isolation is implemented using firewalld direct rules.
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import time
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
+from support.helpers import wait_for_firewall_rules
 
 
 def test_allowlist_mode_allows_specified_domains(coi_binary, workspace_dir, cleanup_containers):
@@ -175,9 +179,10 @@ refresh_interval_minutes = 30
             timeout=10,
         )
 
-        # Wait for firewall rules to be fully applied (CI timing issue)
-        # Use longer delay (5s) as firewalld rule propagation can be slow in CI
-        time.sleep(5)
+        # Wait for firewall rules to be fully applied (poll for default-deny rule)
+        assert wait_for_firewall_rules(container_name, timeout=30), (
+            "Firewall default-deny rule was not applied in time"
+        )
 
         # Test: curl blocked domain (should fail)
         result = subprocess.run(
@@ -524,8 +529,6 @@ refresh_interval_minutes = 30
         )
 
         # Give server time to start
-        import time
-
         time.sleep(2)
 
         # Get container's IP address using incus list (more reliable than hostname -I)
@@ -613,8 +616,6 @@ def test_restricted_allows_host_to_access_container_services(
     )
 
     # Give server time to start
-    import time
-
     time.sleep(2)
 
     # Get container's IP address using incus list (more reliable than hostname -I)
