@@ -133,6 +133,7 @@ type ToolConfig struct {
 	Name           string           `toml:"name"`            // Tool name: "claude", "aider", "cursor", etc.
 	Binary         string           `toml:"binary"`          // Binary name to execute (if empty, uses tool name)
 	PermissionMode string           `toml:"permission_mode"` // Permission mode: "bypass" (default) or "interactive"
+	ContextFile    string           `toml:"context_file"`    // Path to custom context .md file (supports ~ expansion)
 	Claude         ClaudeToolConfig `toml:"claude"`          // Claude-specific settings
 }
 
@@ -475,6 +476,10 @@ func (c *Config) Merge(other *Config) {
 	// Merge permission mode
 	if other.Tool.PermissionMode != "" {
 		c.Tool.PermissionMode = other.Tool.PermissionMode
+	}
+	// Merge context file path
+	if other.Tool.ContextFile != "" {
+		c.Tool.ContextFile = ExpandPath(other.Tool.ContextFile)
 	}
 	// Merge Claude-specific settings
 	if other.Tool.Claude.EffortLevel != "" {

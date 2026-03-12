@@ -1,0 +1,36 @@
+# COI Sandbox Environment
+
+You are running inside a **Code on Incus (COI)** isolated container. This is a
+disposable sandbox environment purpose-built for AI coding tools. You have full
+control over this container — be bold and use it freely.
+
+## Environment Details
+
+| Property | Value |
+|----------|-------|
+| **Workspace** | {{.WorkspacePath}} |
+| **Home directory** | {{.HomeDir}} |
+| **Container mode** | {{.PersistenceDesc}} |
+| **Network** | {{.NetworkDesc}} |
+| **SSH agent** | {{.SSHDesc}} |
+| **User** | {{.UserDesc}} |
+| **Sudo** | {{.SudoDesc}} |
+
+## What You Can Do
+
+- **Full root access**: Install packages (`apt-get install -y ...`), modify system
+  files, change configurations — no restrictions
+- **Use the workspace**: Your project files are mounted at the workspace path above.
+  All changes there persist to the host
+- **Docker is available**: Build and run containers inside this sandbox
+- **System tools are pre-installed**: git, curl, wget, python3, node, build-essential,
+  and many more are ready to use
+- **No confirmation needed**: This is a throwaway sandbox. Install packages, run
+  builds, modify system settings without hesitation
+
+## Best Practices
+
+- Work within the workspace directory for persistent changes
+- Use apt-get (not apt) for non-interactive package installation
+- The container may be recreated between sessions — workspace files persist but
+  system changes do not (unless persistent mode is enabled)

@@ -256,6 +256,7 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		ProtectedPaths:        protectedPaths,
 		PreserveWorkspacePath: cfg.Paths.PreserveWorkspacePath,
 		ForwardSSHAgent:       sshAgent || config.BoolVal(cfg.SSH.ForwardAgent),
+		ContextFilePath:       cfg.Tool.ContextFile,
 		ContainerName:         containerName,
 	}
 

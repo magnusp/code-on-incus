@@ -454,6 +454,87 @@ func TestClaudeBuildCommand_ResumeInteractiveMode(t *testing.T) {
 	}
 }
 
+func TestRenderContextFileContent(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath:     "/workspace",
+		HomeDir:           "/home/code",
+		Persistent:        false,
+		NetworkMode:       "restricted",
+		SSHAgentForwarded: true,
+		RunAsRoot:         false,
+	}
+
+	content := RenderContextFileContent(info)
+
+	// Check that key sections are present
+	checks := []struct {
+		name   string
+		substr string
+	}{
+		{"workspace path", "/workspace"},
+		{"home dir", "/home/code"},
+		{"ephemeral mode", "Ephemeral"},
+		{"restricted network", "Restricted"},
+		{"ssh forwarded", "Forwarded from host"},
+		{"non-root user", "Non-root user"},
+		{"COI header", "COI Sandbox Environment"},
+		{"full root access", "Full root access"},
+		{"docker available", "Docker is available"},
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(content, check.substr) {
+			t.Errorf("RenderContextFileContent() missing %s (expected substring %q)", check.name, check.substr)
+		}
+	}
+}
+
+func TestRenderContextFileContent_Persistent(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath: "/workspace",
+		HomeDir:       "/root",
+		Persistent:    true,
+		NetworkMode:   "open",
+		RunAsRoot:     true,
+	}
+
+	content := RenderContextFileContent(info)
+
+	if !strings.Contains(content, "Persistent") {
+		t.Error("Expected 'Persistent' in content for persistent mode")
+	}
+	if !strings.Contains(content, "Open") {
+		t.Error("Expected 'Open' in content for open network mode")
+	}
+	if !strings.Contains(content, "Root user") {
+		t.Error("Expected 'Root user' in content for root mode")
+	}
+}
+
+func TestRenderContextFileContent_AllNetworkModes(t *testing.T) {
+	tests := []struct {
+		mode     string
+		expected string
+	}{
+		{"restricted", "Restricted"},
+		{"open", "Open"},
+		{"allowlist", "Allowlist"},
+		{"", "Default"},
+	}
+
+	for _, tt := range tests {
+		info := ContextInfo{
+			WorkspacePath: "/workspace",
+			HomeDir:       "/home/code",
+			NetworkMode:   tt.mode,
+		}
+		content := RenderContextFileContent(info)
+		if !strings.Contains(content, tt.expected) {
+			t.Errorf("NetworkMode %q: expected content to contain %q", tt.mode, tt.expected)
+		}
+	}
+}
+
 // Helper functions
 
 func contains(slice []string, item string) bool {

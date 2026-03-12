@@ -1,10 +1,16 @@
 package tool
 
 import (
+	"bytes"
+	_ "embed"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 )
+
+//go:embed templates/sandbox_context.md.tmpl
+var sandboxContextTemplate string
 
 // Tool represents an AI coding tool that can be run in COI containers
 type Tool interface {
@@ -224,4 +230,78 @@ type ToolWithPermissionMode interface {
 	// SetPermissionMode sets the permission mode for the tool.
 	// Valid values: "bypass" (default) or "interactive" (human-in-the-loop).
 	SetPermissionMode(mode string)
+}
+
+// ContextInfo provides dynamic information about the container environment
+// for generating the sandbox context file (~/SANDBOX_CONTEXT.md).
+type ContextInfo struct {
+	WorkspacePath     string // Mount point inside container (e.g., "/workspace")
+	HomeDir           string // Home directory inside container (e.g., "/home/code")
+	Persistent        bool   // Whether the container persists between sessions
+	NetworkMode       string // "restricted", "open", "allowlist", or ""
+	SSHAgentForwarded bool   // Whether host SSH agent is forwarded
+	RunAsRoot         bool   // Whether the tool runs as root
+}
+
+// contextTemplateData holds the resolved values passed to the context file template.
+type contextTemplateData struct {
+	WorkspacePath   string
+	HomeDir         string
+	PersistenceDesc string
+	NetworkDesc     string
+	SSHDesc         string
+	UserDesc        string
+	SudoDesc        string
+}
+
+// RenderContextFileContent renders the embedded sandbox context template with
+// dynamic environment info. This is tool-agnostic — the resulting file is
+// placed at ~/SANDBOX_CONTEXT.md by setup and can be consumed by any AI tool.
+func RenderContextFileContent(info ContextInfo) string {
+	data := contextTemplateData{
+		WorkspacePath:   info.WorkspacePath,
+		HomeDir:         info.HomeDir,
+		PersistenceDesc: "Ephemeral (destroyed after session ends)",
+		NetworkDesc:     "Unknown",
+		SSHDesc:         "Not available",
+		UserDesc:        "Non-root user (code)",
+		SudoDesc:        "Available via passwordless sudo",
+	}
+
+	if info.Persistent {
+		data.PersistenceDesc = "Persistent (survives between sessions)"
+	}
+
+	switch info.NetworkMode {
+	case "restricted":
+		data.NetworkDesc = "Restricted (internet allowed, local/private networks blocked)"
+	case "open":
+		data.NetworkDesc = "Open (all network access allowed)"
+	case "allowlist":
+		data.NetworkDesc = "Allowlist (only pre-approved domains allowed, private networks blocked)"
+	case "":
+		data.NetworkDesc = "Default (no explicit network policy)"
+	}
+
+	if info.SSHAgentForwarded {
+		data.SSHDesc = "Forwarded from host (available via SSH_AUTH_SOCK)"
+	}
+
+	if info.RunAsRoot {
+		data.UserDesc = "Root user"
+		data.SudoDesc = "Already running as root"
+	}
+
+	tmpl, err := template.New("context").Parse(sandboxContextTemplate)
+	if err != nil {
+		// Should never happen with an embedded template; return raw template as fallback.
+		return sandboxContextTemplate
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return sandboxContextTemplate
+	}
+
+	return buf.String()
 }
