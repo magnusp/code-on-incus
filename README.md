@@ -459,6 +459,7 @@ See the [Troubleshooting guide](https://github.com/mensfeld/code-on-incus/wiki/T
 See the [FAQ](https://github.com/mensfeld/code-on-incus/wiki/FAQ) for answers to common questions.
 
 **Topics covered:**
+- Orphaned firewalld zone bindings (Docker + firewalld interaction)
 - How COI compares to Docker Sandboxes and DevContainers
 - Windows support (WSL2)
 - Security model and prompt injection protection
