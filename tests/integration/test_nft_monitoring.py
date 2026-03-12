@@ -1111,7 +1111,9 @@ class TestHealthChecks:
             timeout=60,
         )
         # Health may return 1 (DEGRADED) with warnings - that's acceptable
-        assert result.returncode in (0, 1), f"Health check errored: {result.stderr}"
+        # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
+        # health output content, not that the CI runner's system is fully healthy.
+        assert result.returncode in (0, 1, 2), f"Health check crashed: {result.stderr}"
         assert "checks passed" in result.stdout.lower(), (
             f"Expected health check summary in output:\n{result.stdout}"
         )
@@ -1124,7 +1126,9 @@ class TestHealthChecks:
             text=True,
             timeout=60,
         )
-        assert result.returncode in (0, 1), f"Health check errored: {result.stderr}"
+        # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
+        # health output content, not that the CI runner's system is fully healthy.
+        assert result.returncode in (0, 1, 2), f"Health check crashed: {result.stderr}"
         output_lower = result.stdout.lower()
         assert "monitoring" in output_lower or "process" in output_lower, (
             f"No monitoring checks found in health output:\n{result.stdout}"
@@ -1138,7 +1142,9 @@ class TestHealthChecks:
             text=True,
             timeout=60,
         )
-        assert result.returncode in (0, 1), f"Health check errored: {result.stderr}"
+        # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
+        # health output content, not that the CI runner's system is fully healthy.
+        assert result.returncode in (0, 1, 2), f"Health check crashed: {result.stderr}"
         output_lower = result.stdout.lower()
         assert "network" in output_lower, (
             f"No network checks found in health output:\n{result.stdout}"
