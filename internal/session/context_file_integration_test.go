@@ -115,6 +115,9 @@ func TestContextFile_DefaultInjection(t *testing.T) {
 		{"restricted network", "Restricted"},
 		{"ssh not available", "Not available"},
 		{"non-root user", "Non-root user"},
+		{"OS info", "Ubuntu"},
+		{"troubleshooting section", "Troubleshooting"},
+		{"limitations section", "Limitations"},
 	}
 
 	for _, check := range checks {

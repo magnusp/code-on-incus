@@ -1,8 +1,6 @@
 # COI Sandbox Environment
 
-You are running inside a **Code on Incus (COI)** isolated container. This is a
-disposable sandbox environment purpose-built for AI coding tools. You have full
-control over this container — be bold and use it freely.
+You are running inside a **Code on Incus (COI)** isolated container. This is a disposable sandbox environment purpose-built for AI coding tools. You have full control over this container — be bold and use it freely.
 
 ## Environment Details
 
@@ -10,27 +8,47 @@ control over this container — be bold and use it freely.
 |----------|-------|
 | **Workspace** | {{.WorkspacePath}} |
 | **Home directory** | {{.HomeDir}} |
+| **OS** | {{.OSDesc}} |
+| **Architecture** | {{.ArchDesc}} |
 | **Container mode** | {{.PersistenceDesc}} |
 | **Network** | {{.NetworkDesc}} |
 | **SSH agent** | {{.SSHDesc}} |
+| **Docker** | {{.DockerDesc}} |
 | **User** | {{.UserDesc}} |
 | **Sudo** | {{.SudoDesc}} |
 
 ## What You Can Do
 
-- **Full root access**: Install packages (`apt-get install -y ...`), modify system
-  files, change configurations — no restrictions
-- **Use the workspace**: Your project files are mounted at the workspace path above.
-  All changes there persist to the host
-- **Docker is available**: Build and run containers inside this sandbox
-- **System tools are pre-installed**: git, curl, wget, python3, node, build-essential,
-  and many more are ready to use
-- **No confirmation needed**: This is a throwaway sandbox. Install packages, run
-  builds, modify system settings without hesitation
+- **Full root access**: Install packages with `sudo apt-get install -y ...`, modify system files, change configurations — no restrictions
+- **Use the workspace**: Your project files are mounted at the workspace path above. All changes there persist to the host
+- **Docker is available**: Build and run containers inside this sandbox. The Docker daemon may take a few seconds to start after container boot
+- **System tools are pre-installed**: git, curl, wget, python3, node, build-essential, and many more are ready to use
+- **No confirmation needed**: This is a throwaway sandbox. Install packages, run builds, modify system settings without hesitation
+
+## Limitations
+{{if .NetworkLimitation}}
+- **Network**: {{.NetworkLimitation}}
+{{- end}}
+- Changes outside the workspace directory do **not** persist to the host filesystem
+- The container has no access to the host filesystem outside the mounted workspace
+{{- if .ProtectedPaths}}
+- **Protected paths** (mounted read-only): {{.ProtectedPaths}}
+{{- end}}
+{{- if not .Persistent}}
+- System-level changes (installed packages, config files outside workspace) are lost when the container is destroyed
+{{- end}}
+
+## Troubleshooting
+
+- **Network errors**: Check the Network policy in the table above — some connections may be blocked by firewall rules
+- **Permission denied on workspace files**: Use `sudo chown -R $(whoami) .` in the workspace directory
+- **Docker not responding**: Run `sudo systemctl start docker` — the daemon may not have started yet
+- **Package not found**: Run `sudo apt-get update` first to refresh package lists
+- **SSH authentication fails**: Check the SSH agent row above — if not forwarded, SSH keys are not available
 
 ## Best Practices
 
 - Work within the workspace directory for persistent changes
-- Use apt-get (not apt) for non-interactive package installation
-- The container may be recreated between sessions — workspace files persist but
-  system changes do not (unless persistent mode is enabled)
+- Use `apt-get install -y` (not `apt`) for non-interactive package installation
+- Run `apt-get update` before installing packages if package lists are stale
+- Use `pip install` / `pip3 install` for Python packages and `npm install` for Node packages

@@ -462,6 +462,7 @@ func TestRenderContextFileContent(t *testing.T) {
 		NetworkMode:       "restricted",
 		SSHAgentForwarded: true,
 		RunAsRoot:         false,
+		ProtectedPaths:    []string{".git/hooks", ".vscode"},
 	}
 
 	content := RenderContextFileContent(info)
@@ -475,11 +476,19 @@ func TestRenderContextFileContent(t *testing.T) {
 		{"home dir", "/home/code"},
 		{"ephemeral mode", "Ephemeral"},
 		{"restricted network", "Restricted"},
+		{"network limitation", "local/private networks are blocked"},
 		{"ssh forwarded", "Forwarded from host"},
 		{"non-root user", "Non-root user"},
 		{"COI header", "COI Sandbox Environment"},
 		{"full root access", "Full root access"},
 		{"docker available", "Docker is available"},
+		{"OS info", "Ubuntu"},
+		{"architecture", "amd64"},
+		{"docker row", "Docker-in-Docker"},
+		{"troubleshooting section", "Troubleshooting"},
+		{"limitations section", "Limitations"},
+		{"protected paths", ".git/hooks, .vscode"},
+		{"ephemeral warning", "System-level changes"},
 	}
 
 	for _, check := range checks {
@@ -509,17 +518,23 @@ func TestRenderContextFileContent_Persistent(t *testing.T) {
 	if !strings.Contains(content, "Root user") {
 		t.Error("Expected 'Root user' in content for root mode")
 	}
+	// Persistent mode should NOT warn about system-level changes being lost
+	if strings.Contains(content, "System-level changes") {
+		t.Error("Persistent mode should not contain ephemeral warning about system-level changes")
+	}
 }
 
 func TestRenderContextFileContent_AllNetworkModes(t *testing.T) {
 	tests := []struct {
-		mode     string
-		expected string
+		mode              string
+		expected          string
+		hasLimitation     bool
+		limitationContain string
 	}{
-		{"restricted", "Restricted"},
-		{"open", "Open"},
-		{"allowlist", "Allowlist"},
-		{"", "Default"},
+		{"restricted", "Restricted", true, "local/private networks are blocked"},
+		{"open", "Open", false, ""},
+		{"allowlist", "Allowlist", true, "pre-approved domains"},
+		{"", "Default", false, ""},
 	}
 
 	for _, tt := range tests {
@@ -532,6 +547,22 @@ func TestRenderContextFileContent_AllNetworkModes(t *testing.T) {
 		if !strings.Contains(content, tt.expected) {
 			t.Errorf("NetworkMode %q: expected content to contain %q", tt.mode, tt.expected)
 		}
+		if tt.hasLimitation {
+			if !strings.Contains(content, tt.limitationContain) {
+				t.Errorf("NetworkMode %q: expected limitation containing %q", tt.mode, tt.limitationContain)
+			}
+		}
+	}
+}
+
+func TestRenderContextFileContent_NoProtectedPaths(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath: "/workspace",
+		HomeDir:       "/home/code",
+	}
+	content := RenderContextFileContent(info)
+	if strings.Contains(content, "Protected paths") {
+		t.Error("Should not contain protected paths section when none configured")
 	}
 }
 

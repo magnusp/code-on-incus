@@ -535,6 +535,7 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 			NetworkMode:       networkMode,
 			SSHAgentForwarded: result.SSHAgentSocketPath != "",
 			RunAsRoot:         result.RunAsRoot,
+			ProtectedPaths:    opts.ProtectedPaths,
 		}
 		if err := injectContextFile(result.Manager, ctxInfo, opts.ContextFilePath, result.HomeDir, opts.Logger); err != nil {
 			opts.Logger(fmt.Sprintf("Warning: Failed to inject context file: %v", err))
