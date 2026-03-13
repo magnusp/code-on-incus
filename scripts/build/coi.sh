@@ -185,27 +185,38 @@ install_claude_cli() {
 install_opencode() {
     log "Installing opencode..."
 
-    # Run the installer with retries for transient network failures.
-    # opencode is optional — if its API is down the build continues without it.
+    # The official installer (opencode.ai/install) calls the GitHub API to
+    # resolve the latest version tag.  GitHub's unauthenticated rate limit
+    # (60 req/hour per IP) is routinely exhausted on shared CI runners,
+    # causing "Failed to fetch version information".
+    #
+    # Instead we download the binary directly from the /latest/download/
+    # redirect URL which does NOT hit the API and is not rate-limited.
+    local INSTALL_DIR="/home/$CODE_USER/.opencode/bin"
+    local OPENCODE_PATH="$INSTALL_DIR/opencode"
+    local DOWNLOAD_URL="https://github.com/anomalyco/opencode/releases/latest/download/opencode_linux_amd64"
+
+    mkdir -p "$INSTALL_DIR"
+    chown "$CODE_USER:$CODE_USER" "$INSTALL_DIR"
+
     local attempt
-    local installed=false
     for attempt in 1 2 3; do
-        if su - "$CODE_USER" -c 'curl -fsSL https://opencode.ai/install | bash'; then
-            installed=true
+        if curl -fsSL -o "$OPENCODE_PATH" "$DOWNLOAD_URL"; then
+            chmod +x "$OPENCODE_PATH"
+            chown "$CODE_USER:$CODE_USER" "$OPENCODE_PATH"
             break
         fi
         if [ "$attempt" -eq 3 ]; then
-            log "WARNING: opencode installation failed after 3 attempts, skipping (non-fatal)."
-            return 0
+            log "ERROR: opencode installation failed after 3 attempts."
+            exit 1
         fi
-        log "opencode install failed (attempt $attempt/3), retrying in 10s..."
+        log "opencode download failed (attempt $attempt/3), retrying in 10s..."
         sleep 10
     done
 
-    local OPENCODE_PATH="/home/$CODE_USER/.opencode/bin/opencode"
     if [[ ! -x "$OPENCODE_PATH" ]]; then
-        log "WARNING: opencode binary not found at $OPENCODE_PATH after installation, skipping."
-        return 0
+        log "ERROR: opencode binary not found at $OPENCODE_PATH after installation."
+        exit 1
     fi
 
     ln -sf "$OPENCODE_PATH" /usr/local/bin/opencode
