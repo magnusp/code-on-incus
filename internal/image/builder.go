@@ -390,9 +390,14 @@ func (b *Builder) runBuildScript(scriptPath string) error {
 		return fmt.Errorf("failed to chmod build script: %w", err)
 	}
 
-	// Execute script
+	// Execute script (pass GITHUB_TOKEN if available, to avoid API rate limits)
 	b.opts.Logger("Executing build script...")
-	if _, err := b.mgr.ExecCommand("/tmp/build.sh", container.ExecCommandOptions{Capture: false}); err != nil {
+	execOpts := container.ExecCommandOptions{Capture: false}
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		execOpts.Env = map[string]string{"GITHUB_TOKEN": token}
+		b.opts.Logger("Forwarding GITHUB_TOKEN to build container")
+	}
+	if _, err := b.mgr.ExecCommand("/tmp/build.sh", execOpts); err != nil {
 		return fmt.Errorf("build script failed: %w", err)
 	}
 
