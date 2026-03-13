@@ -103,6 +103,17 @@ func shutdownCommand(cmd *cobra.Command, args []string) error {
 		fmt.Printf("Shutting down container %s (timeout: %ds)...\n", name, shutdownTimeout)
 		mgr := container.NewManager(name)
 
+		// Check if container exists at all before attempting anything
+		exists, err := mgr.Exists()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "  Warning: Failed to check if %s exists: %v\n", name, err)
+			continue
+		}
+		if !exists {
+			fmt.Fprintf(os.Stderr, "  Warning: Container %s does not exist\n", name)
+			continue
+		}
+
 		// Get container IP and veth name BEFORE stopping/deleting (needed for firewall cleanup)
 		var containerIP string
 		var vethName string
