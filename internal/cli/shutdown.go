@@ -158,9 +158,15 @@ func shutdownCommand(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Delete container
+		// Delete container (may already be gone if ephemeral or cleaned by shell process)
 		if err := mgr.Delete(true); err != nil {
-			fmt.Fprintf(os.Stderr, "  Warning: Failed to delete %s: %v\n", name, err)
+			// Check if container is already gone — that counts as success
+			if exists, existsErr := mgr.Exists(); existsErr == nil && !exists {
+				shutdown++
+				fmt.Printf("  ✓ Shutdown %s (already removed)\n", name)
+			} else {
+				fmt.Fprintf(os.Stderr, "  Warning: Failed to delete %s: %v\n", name, err)
+			}
 		} else {
 			shutdown++
 			fmt.Printf("  ✓ Shutdown %s\n", name)
