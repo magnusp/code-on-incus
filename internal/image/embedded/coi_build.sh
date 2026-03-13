@@ -185,15 +185,18 @@ install_claude_cli() {
 install_opencode() {
     log "Installing opencode..."
 
-    # Run the installer with retries for transient network failures
+    # Run the installer with retries for transient network failures.
+    # opencode is optional — if its API is down the build continues without it.
     local attempt
+    local installed=false
     for attempt in 1 2 3; do
         if su - "$CODE_USER" -c 'curl -fsSL https://opencode.ai/install | bash'; then
+            installed=true
             break
         fi
         if [ "$attempt" -eq 3 ]; then
-            log "ERROR: opencode installation failed after 3 attempts."
-            exit 1
+            log "WARNING: opencode installation failed after 3 attempts, skipping (non-fatal)."
+            return 0
         fi
         log "opencode install failed (attempt $attempt/3), retrying in 10s..."
         sleep 10
@@ -201,9 +204,8 @@ install_opencode() {
 
     local OPENCODE_PATH="/home/$CODE_USER/.opencode/bin/opencode"
     if [[ ! -x "$OPENCODE_PATH" ]]; then
-        log "ERROR: opencode binary not found at $OPENCODE_PATH after installation."
-        log "Installation may have failed or installed to an unexpected location."
-        exit 1
+        log "WARNING: opencode binary not found at $OPENCODE_PATH after installation, skipping."
+        return 0
     fi
 
     ln -sf "$OPENCODE_PATH" /usr/local/bin/opencode
