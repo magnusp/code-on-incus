@@ -196,7 +196,7 @@ install_opencode() {
     # header for the redirect chain (raises limit to 5000 req/hour).
     local INSTALL_DIR="/home/$CODE_USER/.opencode/bin"
     local OPENCODE_PATH="$INSTALL_DIR/opencode"
-    local DOWNLOAD_URL="https://github.com/anomalyco/opencode/releases/latest/download/opencode_linux_amd64"
+    local DOWNLOAD_URL="https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz"
 
     local AUTH_HEADER=""
     if [[ -n "${GITHUB_TOKEN:-}" ]]; then
@@ -210,12 +210,17 @@ install_opencode() {
 
     local attempt
     for attempt in 1 2 3; do
+        local dl_ok=false
         if [[ -n "$AUTH_HEADER" ]]; then
-            curl -fsSL "$AUTH_HEADER" "$AUTH_HEADER_VAL" -o "$OPENCODE_PATH" "$DOWNLOAD_URL"
+            if curl -fsSL "$AUTH_HEADER" "$AUTH_HEADER_VAL" "$DOWNLOAD_URL" | tar xz -C "$INSTALL_DIR"; then
+                dl_ok=true
+            fi
         else
-            curl -fsSL -o "$OPENCODE_PATH" "$DOWNLOAD_URL"
+            if curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$INSTALL_DIR"; then
+                dl_ok=true
+            fi
         fi
-        if [[ $? -eq 0 ]]; then
+        if [[ "$dl_ok" == "true" ]]; then
             chmod +x "$OPENCODE_PATH"
             chown "$CODE_USER:$CODE_USER" "$OPENCODE_PATH"
             break
