@@ -462,6 +462,7 @@ func TestRenderContextFileContent(t *testing.T) {
 		NetworkMode:       "restricted",
 		SSHAgentForwarded: true,
 		RunAsRoot:         false,
+		Architecture:      "amd64",
 		ProtectedPaths:    []string{".git/hooks", ".vscode"},
 	}
 

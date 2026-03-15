@@ -12,6 +12,13 @@
 
 set -euo pipefail
 
+# Load GITHUB_TOKEN from temp file if pushed by builder (avoids command-line exposure)
+if [[ -f /tmp/.github_token ]]; then
+    GITHUB_TOKEN="$(cat /tmp/.github_token)"
+    export GITHUB_TOKEN
+    rm -f /tmp/.github_token
+fi
+
 # Configuration
 CODE_USER="code"
 CODE_UID=1000

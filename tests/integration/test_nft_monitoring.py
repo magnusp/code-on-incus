@@ -371,20 +371,20 @@ class TestNetworkThreatDetection:
                 timeout=10,
             )
 
-            # Poll for threat events (monitoring pipeline is async: journal reader
-            # -> event processor -> responder -> audit log write)
+            # Poll for CRITICAL threat events (monitoring pipeline is async:
+            # journal reader -> event processor -> responder -> audit log write)
             events = []
             critical_events = []
             for _ in range(15):
                 time.sleep(1)
                 events = get_nft_threat_events(container_name)
                 critical_events = [e for e in events if e.get("level") == "critical"]
-                if len(events) > 0:
+                if len(critical_events) > 0:
                     break
 
-            # Should have detected metadata access as critical
-            assert len(critical_events) > 0 or len(events) > 0, (
-                f"Expected threat logged for metadata access. Events: {events}"
+            # Should have detected metadata access specifically as critical
+            assert len(critical_events) > 0, (
+                f"Expected CRITICAL threat logged for metadata access. Events: {events}"
             )
 
         finally:

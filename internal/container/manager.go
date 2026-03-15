@@ -531,15 +531,24 @@ func ImageExistsGlobal(imageAlias string) (bool, error) {
 
 // Helper function to create a file with content
 func (m *Manager) CreateFile(containerPath, content string) error {
-	// Create temp file locally
-	tmpFile := filepath.Join(os.TempDir(), fmt.Sprintf("coi-%s", filepath.Base(containerPath)))
-	if err := os.WriteFile(tmpFile, []byte(content), 0o644); err != nil {
+	// Create a unique temp file to avoid collisions with concurrent sessions
+	tmpFile, err := os.CreateTemp("", fmt.Sprintf("coi-%s-*", filepath.Base(containerPath)))
+	if err != nil {
 		return err
 	}
-	defer os.Remove(tmpFile)
+	tmpPath := tmpFile.Name()
+	defer os.Remove(tmpPath)
+
+	if _, err := tmpFile.WriteString(content); err != nil {
+		tmpFile.Close()
+		return err
+	}
+	if err := tmpFile.Close(); err != nil {
+		return err
+	}
 
 	// Push to container
-	return m.PushFile(tmpFile, containerPath)
+	return m.PushFile(tmpPath, containerPath)
 }
 
 // ExecHostCommand executes a command on the host (not in container)
