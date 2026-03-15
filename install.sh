@@ -73,7 +73,43 @@ check_incus() {
             exit 1
         fi
     else
-        echo -e "${GREEN}✓ Incus found: $(incus version)${NC}"
+        local incus_version_output
+        incus_version_output="$(incus version 2>/dev/null)"
+        echo -e "${GREEN}✓ Incus found: ${incus_version_output}${NC}"
+
+        # Check minimum version (>= 6.1)
+        local server_version
+        server_version="$(echo "$incus_version_output" | grep '^Server version:' | cut -d: -f2 | tr -d ' ')"
+        if [ -z "$server_version" ]; then
+            # Fallback: single-line output (older Incus)
+            server_version="$(echo "$incus_version_output" | head -n1 | tr -d ' ')"
+        fi
+
+        if [ -n "$server_version" ]; then
+            local ver_major ver_minor
+            ver_major="$(echo "$server_version" | cut -d. -f1)"
+            ver_minor="$(echo "$server_version" | cut -d. -f2)"
+
+            if [ -n "$ver_major" ] && [ -n "$ver_minor" ]; then
+                if [ "$ver_major" -lt 6 ] || { [ "$ver_major" -eq 6 ] && [ "$ver_minor" -lt 1 ]; }; then
+                    echo ""
+                    echo -e "${YELLOW}⚠ Incus version ${server_version} is below the minimum required 6.1${NC}"
+                    echo ""
+                    echo "  Ubuntu ships Incus 6.0.x which lacks required idmapping support."
+                    echo "  You may see errors like:"
+                    echo "    'Failed to setup device mount: idmapping abilities are required'"
+                    echo ""
+                    echo "  Please install Incus >= 6.1 from the Zabbly repository:"
+                    echo "    https://github.com/zabbly/incus"
+                    echo ""
+                    read -p "Continue installation anyway? [y/N] " -n 1 -r
+                    echo
+                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                        exit 1
+                    fi
+                fi
+            fi
+        fi
     fi
 }
 

@@ -8,7 +8,117 @@ import (
 	"github.com/mensfeld/code-on-incus/internal/config"
 	"github.com/mensfeld/code-on-incus/internal/container"
 	"github.com/mensfeld/code-on-incus/internal/network"
+	"github.com/mensfeld/code-on-incus/internal/nftmonitor"
 )
+
+// TestCheckIncus_VersionCheck verifies that CheckIncus returns version info
+// and validates it against the minimum version requirement.
+func TestCheckIncus_VersionCheck(t *testing.T) {
+	if _, err := exec.LookPath("incus"); err != nil {
+		t.Skip("incus not found, skipping integration test")
+	}
+
+	if !container.Available() {
+		t.Skip("incus daemon not running, skipping integration test")
+	}
+
+	result := CheckIncus()
+
+	if result.Name != "incus" {
+		t.Errorf("Expected check name 'incus', got '%s'", result.Name)
+	}
+
+	// Should be OK or Warning (version too old), never Failed since daemon is running
+	if result.Status != StatusOK && result.Status != StatusWarning {
+		t.Errorf("Expected StatusOK or StatusWarning, got %s: %s", result.Status, result.Message)
+	}
+
+	// Details should contain a version
+	if result.Details == nil || result.Details["version"] == nil {
+		t.Error("Expected 'version' in details")
+	}
+
+	versionStr, ok := result.Details["version"].(string)
+	if !ok || versionStr == "" {
+		t.Errorf("Expected non-empty version string in details, got %v", result.Details["version"])
+	}
+
+	// Verify the version is parseable
+	v, err := container.ParseIncusVersion(versionStr)
+	if err != nil {
+		t.Fatalf("Version from CheckIncus (%q) should be parseable: %v", versionStr, err)
+	}
+
+	// On this system, if version meets minimum, status should be OK
+	if container.MeetsMinimumVersion(v) {
+		if result.Status != StatusOK {
+			t.Errorf("Version %s meets minimum but status is %s: %s", versionStr, result.Status, result.Message)
+		}
+		if !strings.Contains(result.Message, versionStr) {
+			t.Errorf("Message should contain version %q, got %q", versionStr, result.Message)
+		}
+	} else {
+		// Version below minimum should produce a warning with upgrade instructions
+		if result.Status != StatusWarning {
+			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
+		}
+		if !strings.Contains(result.Message, "zabbly") {
+			t.Errorf("Warning message should mention zabbly, got %q", result.Message)
+		}
+	}
+
+	t.Logf("CheckIncus: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
+}
+
+// TestCheckNFTables_VersionCheck verifies that CheckNFTables returns version info
+// and validates it against the minimum version requirement.
+func TestCheckNFTables_VersionCheck(t *testing.T) {
+	if _, err := exec.LookPath("nft"); err != nil {
+		t.Skip("nft not found, skipping integration test")
+	}
+
+	result := CheckNFTables()
+
+	if result.Name != "nftables" {
+		t.Errorf("Expected check name 'nftables', got '%s'", result.Name)
+	}
+
+	// Details should contain a version
+	if result.Details == nil || result.Details["version"] == nil {
+		t.Skipf("No version in details (nft --version may have failed): %s", result.Message)
+	}
+
+	versionStr, ok := result.Details["version"].(string)
+	if !ok || versionStr == "" {
+		t.Errorf("Expected non-empty version string in details, got %v", result.Details["version"])
+	}
+
+	// Verify the version is parseable
+	v, err := nftmonitor.ParseNFTVersion(versionStr)
+	if err != nil {
+		t.Fatalf("Version from CheckNFTables (%q) should be parseable: %v", versionStr, err)
+	}
+
+	if nftmonitor.MeetsMinimumNFTVersion(v) {
+		// Version meets minimum — status should be OK (if sudo works) or Warning (sudo issue)
+		if result.Status == StatusFailed {
+			t.Errorf("Version %s meets minimum but status is Failed: %s", versionStr, result.Message)
+		}
+		if result.Status == StatusOK && !strings.Contains(result.Message, versionStr) {
+			t.Errorf("OK message should contain version %q, got %q", versionStr, result.Message)
+		}
+	} else {
+		// Version below minimum should produce a warning about upgrading
+		if result.Status != StatusWarning {
+			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
+		}
+		if !strings.Contains(result.Message, "nftables") {
+			t.Errorf("Warning message should mention nftables, got %q", result.Message)
+		}
+	}
+
+	t.Logf("CheckNFTables: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
+}
 
 // TestCheckContainerConnectivity_NoImage verifies that the check is skipped
 // when the specified image doesn't exist.

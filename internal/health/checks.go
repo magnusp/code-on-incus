@@ -16,6 +16,7 @@ import (
 	"github.com/mensfeld/code-on-incus/internal/config"
 	"github.com/mensfeld/code-on-incus/internal/container"
 	"github.com/mensfeld/code-on-incus/internal/network"
+	"github.com/mensfeld/code-on-incus/internal/nftmonitor"
 	"github.com/mensfeld/code-on-incus/internal/session"
 	"github.com/mensfeld/code-on-incus/internal/tool"
 )
@@ -128,22 +129,45 @@ func CheckIncus() HealthCheck {
 		}
 	}
 
-	// Parse version - extract server version from multi-line output
-	// Example output: "Client version: 6.20\nServer version: 6.20"
-	version := strings.TrimSpace(versionOutput)
-	for _, line := range strings.Split(version, "\n") {
-		if strings.HasPrefix(line, "Server version:") {
-			version = strings.TrimSpace(strings.TrimPrefix(line, "Server version:"))
-			break
+	// Extract and parse server version
+	versionStr, err := container.ExtractServerVersion(versionOutput)
+	if err != nil {
+		return HealthCheck{
+			Name:    "incus",
+			Status:  StatusOK,
+			Message: "Running (version unknown)",
+		}
+	}
+
+	v, err := container.ParseIncusVersion(versionStr)
+	if err != nil {
+		return HealthCheck{
+			Name:    "incus",
+			Status:  StatusOK,
+			Message: fmt.Sprintf("Running (version %s)", versionStr),
+			Details: map[string]interface{}{
+				"version": versionStr,
+			},
+		}
+	}
+
+	if !container.MeetsMinimumVersion(v) {
+		return HealthCheck{
+			Name:    "incus",
+			Status:  StatusWarning,
+			Message: container.FormatMinVersionError(v),
+			Details: map[string]interface{}{
+				"version": versionStr,
+			},
 		}
 	}
 
 	return HealthCheck{
 		Name:    "incus",
 		Status:  StatusOK,
-		Message: fmt.Sprintf("Running (version %s)", version),
+		Message: fmt.Sprintf("Running (version %s)", versionStr),
 		Details: map[string]interface{}{
-			"version": version,
+			"version": versionStr,
 		},
 	}
 }
@@ -1509,6 +1533,30 @@ func CheckNFTables() HealthCheck {
 		}
 	}
 
+	// Check nft version
+	versionCmd := exec.Command("nft", "--version")
+	versionOutput, vErr := versionCmd.CombinedOutput()
+
+	var nftVersion string
+	if vErr == nil {
+		if vs, err := nftmonitor.ExtractNFTVersion(string(versionOutput)); err == nil {
+			nftVersion = vs
+			if v, err := nftmonitor.ParseNFTVersion(vs); err == nil {
+				if !nftmonitor.MeetsMinimumNFTVersion(v) {
+					return HealthCheck{
+						Name:    "nftables",
+						Status:  StatusWarning,
+						Message: nftmonitor.FormatMinNFTVersionError(v),
+						Details: map[string]interface{}{
+							"nft_path": nftPath,
+							"version":  vs,
+						},
+					}
+				}
+			}
+		}
+	}
+
 	// Check if we can run nft commands with sudo (NOPASSWD)
 	cmd := exec.Command("sudo", "-n", "nft", "list", "ruleset")
 	output, err := cmd.CombinedOutput()
@@ -1519,18 +1567,25 @@ func CheckNFTables() HealthCheck {
 			Message: "nftables installed but sudo access not configured",
 			Details: map[string]interface{}{
 				"nft_path": nftPath,
+				"version":  nftVersion,
 				"error":    string(output),
 				"hint":     "Run scripts/install-nft-deps.sh to configure passwordless sudo",
 			},
 		}
 	}
 
+	message := "nftables available with sudo access"
+	if nftVersion != "" {
+		message = fmt.Sprintf("nftables %s available with sudo access", nftVersion)
+	}
+
 	return HealthCheck{
 		Name:    "nftables",
 		Status:  StatusOK,
-		Message: "nftables available with sudo access",
+		Message: message,
 		Details: map[string]interface{}{
 			"nft_path": nftPath,
+			"version":  nftVersion,
 		},
 	}
 }
