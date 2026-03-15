@@ -390,19 +390,7 @@ func (b *Builder) runBuildScript(scriptPath string) error {
 		return fmt.Errorf("failed to chmod build script: %w", err)
 	}
 
-	// Forward GITHUB_TOKEN if available (avoids GitHub API rate limits during build).
-	// Push as a restrictive temp file rather than passing via --env to avoid
-	// exposing the token on the host process command line (visible via ps).
 	b.opts.Logger("Executing build script...")
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		b.opts.Logger("Forwarding GITHUB_TOKEN to build container")
-		if err := b.mgr.CreateFile("/tmp/.github_token", token); err != nil {
-			b.opts.Logger(fmt.Sprintf("Warning: failed to push GITHUB_TOKEN: %v", err))
-		} else {
-			// Restrict permissions and have the build script source it
-			b.mgr.ExecCommand("chmod 600 /tmp/.github_token", container.ExecCommandOptions{}) //nolint:errcheck
-		}
-	}
 	execOpts := container.ExecCommandOptions{Capture: false}
 	if _, err := b.mgr.ExecCommand("/tmp/build.sh", execOpts); err != nil {
 		return fmt.Errorf("build script failed: %w", err)

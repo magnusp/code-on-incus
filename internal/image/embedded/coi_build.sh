@@ -12,13 +12,6 @@
 
 set -euo pipefail
 
-# Load GITHUB_TOKEN from temp file if pushed by builder (avoids command-line exposure)
-if [[ -f /tmp/.github_token ]]; then
-    GITHUB_TOKEN="$(cat /tmp/.github_token)"
-    export GITHUB_TOKEN
-    rm -f /tmp/.github_token
-fi
-
 # Configuration
 CODE_USER="code"
 CODE_UID=1000
@@ -192,42 +185,19 @@ install_claude_cli() {
 install_opencode() {
     log "Installing opencode..."
 
-    # The official installer (opencode.ai/install) calls the GitHub API to
-    # resolve the latest version tag.  GitHub's unauthenticated rate limit
-    # (60 req/hour per IP) is routinely exhausted on shared CI runners,
-    # causing "Failed to fetch version information".
-    #
-    # Instead we download the binary directly from the /latest/download/
-    # redirect URL which does NOT hit the API and is not rate-limited.
-    # If GITHUB_TOKEN is available (CI), we also set the Authorization
-    # header for the redirect chain (raises limit to 5000 req/hour).
+    # Download the binary directly from the /latest/download/ redirect URL.
+    # This does NOT hit the GitHub API and is not subject to rate limits
+    # (unlike the official installer which calls api.github.com).
     local INSTALL_DIR="/home/$CODE_USER/.opencode/bin"
     local OPENCODE_PATH="$INSTALL_DIR/opencode"
     local DOWNLOAD_URL="https://github.com/anomalyco/opencode/releases/latest/download/opencode-linux-x64.tar.gz"
-
-    local AUTH_HEADER=""
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        AUTH_HEADER="-H"
-        AUTH_HEADER_VAL="Authorization: Bearer $GITHUB_TOKEN"
-        log "Using GITHUB_TOKEN for authenticated download"
-    fi
 
     mkdir -p "$INSTALL_DIR"
     chown "$CODE_USER:$CODE_USER" "$INSTALL_DIR"
 
     local attempt
     for attempt in 1 2 3; do
-        local dl_ok=false
-        if [[ -n "$AUTH_HEADER" ]]; then
-            if curl -fsSL "$AUTH_HEADER" "$AUTH_HEADER_VAL" "$DOWNLOAD_URL" | tar xz -C "$INSTALL_DIR"; then
-                dl_ok=true
-            fi
-        else
-            if curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$INSTALL_DIR"; then
-                dl_ok=true
-            fi
-        fi
-        if [[ "$dl_ok" == "true" ]]; then
+        if curl -fsSL "$DOWNLOAD_URL" | tar xz -C "$INSTALL_DIR"; then
             chmod +x "$OPENCODE_PATH"
             chown "$CODE_USER:$CODE_USER" "$OPENCODE_PATH"
             break
