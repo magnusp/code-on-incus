@@ -91,6 +91,11 @@ See the [Supported Tools wiki page](https://github.com/mensfeld/code-on-incus/wi
 - **Workspace files persist even in ephemeral mode** - Only the container is deleted, your work is always saved
 - Container snapshots - Create checkpoints, rollback changes, and branch experiments with full state preservation
 
+**Host Integration**
+- SSH agent forwarding - Use git-over-SSH inside containers without copying private keys (`--ssh-agent` or `[ssh] forward_agent = true`)
+- Environment variable forwarding - Selectively forward host env vars by name (`--forward-env` or `forward_env` in config)
+- Sandbox context file - Auto-injected `~/SANDBOX_CONTEXT.md` tells AI tools about their environment (network mode, workspace path, persistence, etc.)
+
 **Security & Isolation**
 - Credential protection - SSH keys, `.env` files, Git credentials, and environment variables are **never** exposed unless explicitly mounted
 - Real-time threat detection - Kernel-level nftables monitoring detects reverse shells, C2 connections, data exfiltration, DNS tunneling, and credential scanning
@@ -261,6 +266,8 @@ coi clean
 --env KEY=VALUE         # Set environment variables (repeatable)
 --mount HOST:CONTAINER  # Mount directory into container (repeatable)
 --network MODE          # Network mode: restricted (default), allowlist, open
+--ssh-agent             # Forward host SSH agent into container (git over SSH without copying keys)
+--forward-env VARS      # Forward host environment variables by name (comma-separated)
 --monitor               # Enable security monitoring with automatic threat response
 --writable-git-hooks    # Allow container to write to .git/hooks (disables protection)
 ```
