@@ -1,10 +1,17 @@
 package tool
 
 import (
+	"bytes"
+	_ "embed"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
+	"text/template"
 )
+
+//go:embed templates/sandbox_context.md.tmpl
+var sandboxContextTemplate string
 
 // Tool represents an AI coding tool that can be run in COI containers
 type Tool interface {
@@ -224,4 +231,104 @@ type ToolWithPermissionMode interface {
 	// SetPermissionMode sets the permission mode for the tool.
 	// Valid values: "bypass" (default) or "interactive" (human-in-the-loop).
 	SetPermissionMode(mode string)
+}
+
+// ContextInfo provides dynamic information about the container environment
+// for generating the sandbox context file (~/SANDBOX_CONTEXT.md).
+type ContextInfo struct {
+	WorkspacePath     string   // Mount point inside container (e.g., "/workspace")
+	HomeDir           string   // Home directory inside container (e.g., "/home/code")
+	Persistent        bool     // Whether the container persists between sessions
+	NetworkMode       string   // "restricted", "open", "allowlist", or ""
+	SSHAgentForwarded bool     // Whether host SSH agent is forwarded
+	RunAsRoot         bool     // Whether the tool runs as root
+	OSName            string   // OS name (e.g., "Ubuntu 22.04")
+	Architecture      string   // CPU architecture (e.g., "amd64", "arm64")
+	ProtectedPaths    []string // Paths mounted read-only for security
+}
+
+// contextTemplateData holds the resolved values passed to the context file template.
+type contextTemplateData struct {
+	WorkspacePath     string
+	HomeDir           string
+	OSDesc            string
+	ArchDesc          string
+	PersistenceDesc   string
+	NetworkDesc       string
+	NetworkLimitation string
+	SSHDesc           string
+	DockerDesc        string
+	UserDesc          string
+	SudoDesc          string
+	ProtectedPaths    string
+	Persistent        bool
+}
+
+// RenderContextFileContent renders the embedded sandbox context template with
+// dynamic environment info. This is tool-agnostic — the resulting file is
+// placed at ~/SANDBOX_CONTEXT.md by setup and can be consumed by any AI tool.
+func RenderContextFileContent(info ContextInfo) string {
+	data := contextTemplateData{
+		WorkspacePath:   info.WorkspacePath,
+		HomeDir:         info.HomeDir,
+		OSDesc:          info.OSName,
+		ArchDesc:        info.Architecture,
+		PersistenceDesc: "Ephemeral (destroyed after session ends)",
+		Persistent:      info.Persistent,
+		NetworkDesc:     "Unknown",
+		SSHDesc:         "Not available",
+		DockerDesc:      "Available (Docker-in-Docker)",
+		UserDesc:        "Non-root user (code)",
+		SudoDesc:        "Available via passwordless sudo",
+	}
+
+	if data.OSDesc == "" {
+		data.OSDesc = "Ubuntu (container)"
+	}
+	if data.ArchDesc == "" {
+		data.ArchDesc = runtime.GOARCH
+	}
+
+	if info.Persistent {
+		data.PersistenceDesc = "Persistent (survives between sessions)"
+	}
+
+	switch info.NetworkMode {
+	case "restricted":
+		data.NetworkDesc = "Restricted (internet allowed, local/private networks blocked)"
+		data.NetworkLimitation = "Internet access is allowed, but connections to local/private networks are blocked by firewall rules"
+	case "open":
+		data.NetworkDesc = "Open (all network access allowed)"
+	case "allowlist":
+		data.NetworkDesc = "Allowlist (only pre-approved domains allowed)"
+		data.NetworkLimitation = "Only pre-approved domains are reachable; all other outbound connections and private networks are blocked"
+	case "":
+		data.NetworkDesc = "Default (no explicit network policy)"
+	}
+
+	if info.SSHAgentForwarded {
+		data.SSHDesc = "Forwarded from host (available via SSH_AUTH_SOCK)"
+	}
+
+	if info.RunAsRoot {
+		data.UserDesc = "Root user"
+		data.SudoDesc = "Already running as root"
+	}
+
+	if len(info.ProtectedPaths) > 0 {
+		data.ProtectedPaths = strings.Join(info.ProtectedPaths, ", ")
+	}
+
+	tmpl, err := template.New("context").Parse(sandboxContextTemplate)
+	if err != nil {
+		// Should never happen with an embedded template; return raw template as fallback.
+		return sandboxContextTemplate
+	}
+
+	var buf bytes.Buffer
+	if err := tmpl.Execute(&buf, data); err != nil {
+		return sandboxContextTemplate
+	}
+
+	return buf.String()
 }

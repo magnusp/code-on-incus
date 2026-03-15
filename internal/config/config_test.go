@@ -483,6 +483,61 @@ func TestToolConfigMerge(t *testing.T) {
 	}
 }
 
+func TestContextFileMerge(t *testing.T) {
+	homeDir, _ := os.UserHomeDir()
+
+	tests := []struct {
+		name     string
+		base     string
+		other    string
+		expected string
+	}{
+		{
+			name:     "empty base + set other = expanded other",
+			base:     "",
+			other:    "~/my-context.md",
+			expected: filepath.Join(homeDir, "my-context.md"),
+		},
+		{
+			name:     "set base + empty other = preserved base",
+			base:     "/some/path.md",
+			other:    "",
+			expected: "/some/path.md",
+		},
+		{
+			name:     "set base + set other = expanded other",
+			base:     "/old/path.md",
+			other:    "~/new-context.md",
+			expected: filepath.Join(homeDir, "new-context.md"),
+		},
+		{
+			name:     "both empty stays empty",
+			base:     "",
+			other:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			base := GetDefaultConfig()
+			base.Tool.ContextFile = tt.base
+
+			other := &Config{
+				Tool: ToolConfig{
+					ContextFile: tt.other,
+				},
+			}
+
+			base.Merge(other)
+
+			if base.Tool.ContextFile != tt.expected {
+				t.Errorf("Expected ContextFile %q, got %q", tt.expected, base.Tool.ContextFile)
+			}
+		})
+	}
+}
+
 func TestClaudeEffortLevelMerge(t *testing.T) {
 	tests := []struct {
 		name          string

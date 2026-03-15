@@ -371,16 +371,20 @@ class TestNetworkThreatDetection:
                 timeout=10,
             )
 
-            # Give monitoring time to detect and log
-            time.sleep(5)
+            # Poll for CRITICAL threat events (monitoring pipeline is async:
+            # journal reader -> event processor -> responder -> audit log write)
+            events = []
+            critical_events = []
+            for _ in range(15):
+                time.sleep(1)
+                events = get_nft_threat_events(container_name)
+                critical_events = [e for e in events if e.get("level") == "critical"]
+                if len(critical_events) > 0:
+                    break
 
-            # Check audit log for threat events
-            events = get_nft_threat_events(container_name)
-            critical_events = [e for e in events if e.get("level") == "critical"]
-
-            # Should have detected metadata access as critical
-            assert len(critical_events) > 0 or len(events) > 0, (
-                f"Expected threat logged for metadata access. Events: {events}"
+            # Should have detected metadata access specifically as critical
+            assert len(critical_events) > 0, (
+                f"Expected CRITICAL threat logged for metadata access. Events: {events}"
             )
 
         finally:
@@ -812,6 +816,17 @@ class TestNFTRuleCleanupOnShutdown:
                     break
                 time.sleep(2)
             assert nft_ready, f"NFT rules should exist for {container_ip} before shutdown"
+
+            # Terminate the shell process first to avoid a race where both
+            # the shell's cleanup handler and coi shutdown try to delete the
+            # container simultaneously.
+            proc.terminate()
+            try:
+                proc.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=5)
+            time.sleep(2)
 
             # Shutdown using coi shutdown command
             shutdown_result = subprocess.run(

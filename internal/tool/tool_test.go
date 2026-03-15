@@ -454,6 +454,119 @@ func TestClaudeBuildCommand_ResumeInteractiveMode(t *testing.T) {
 	}
 }
 
+func TestRenderContextFileContent(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath:     "/workspace",
+		HomeDir:           "/home/code",
+		Persistent:        false,
+		NetworkMode:       "restricted",
+		SSHAgentForwarded: true,
+		RunAsRoot:         false,
+		Architecture:      "amd64",
+		ProtectedPaths:    []string{".git/hooks", ".vscode"},
+	}
+
+	content := RenderContextFileContent(info)
+
+	// Check that key sections are present
+	checks := []struct {
+		name   string
+		substr string
+	}{
+		{"workspace path", "/workspace"},
+		{"home dir", "/home/code"},
+		{"ephemeral mode", "Ephemeral"},
+		{"restricted network", "Restricted"},
+		{"network limitation", "local/private networks are blocked"},
+		{"ssh forwarded", "Forwarded from host"},
+		{"non-root user", "Non-root user"},
+		{"COI header", "COI Sandbox Environment"},
+		{"full root access", "Full root access"},
+		{"docker available", "Docker is available"},
+		{"OS info", "Ubuntu"},
+		{"architecture", "amd64"},
+		{"docker row", "Docker-in-Docker"},
+		{"troubleshooting section", "Troubleshooting"},
+		{"limitations section", "Limitations"},
+		{"protected paths", ".git/hooks, .vscode"},
+		{"ephemeral warning", "System-level changes"},
+	}
+
+	for _, check := range checks {
+		if !strings.Contains(content, check.substr) {
+			t.Errorf("RenderContextFileContent() missing %s (expected substring %q)", check.name, check.substr)
+		}
+	}
+}
+
+func TestRenderContextFileContent_Persistent(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath: "/workspace",
+		HomeDir:       "/root",
+		Persistent:    true,
+		NetworkMode:   "open",
+		RunAsRoot:     true,
+	}
+
+	content := RenderContextFileContent(info)
+
+	if !strings.Contains(content, "Persistent") {
+		t.Error("Expected 'Persistent' in content for persistent mode")
+	}
+	if !strings.Contains(content, "Open") {
+		t.Error("Expected 'Open' in content for open network mode")
+	}
+	if !strings.Contains(content, "Root user") {
+		t.Error("Expected 'Root user' in content for root mode")
+	}
+	// Persistent mode should NOT warn about system-level changes being lost
+	if strings.Contains(content, "System-level changes") {
+		t.Error("Persistent mode should not contain ephemeral warning about system-level changes")
+	}
+}
+
+func TestRenderContextFileContent_AllNetworkModes(t *testing.T) {
+	tests := []struct {
+		mode              string
+		expected          string
+		hasLimitation     bool
+		limitationContain string
+	}{
+		{"restricted", "Restricted", true, "local/private networks are blocked"},
+		{"open", "Open", false, ""},
+		{"allowlist", "Allowlist", true, "pre-approved domains"},
+		{"", "Default", false, ""},
+	}
+
+	for _, tt := range tests {
+		info := ContextInfo{
+			WorkspacePath: "/workspace",
+			HomeDir:       "/home/code",
+			NetworkMode:   tt.mode,
+		}
+		content := RenderContextFileContent(info)
+		if !strings.Contains(content, tt.expected) {
+			t.Errorf("NetworkMode %q: expected content to contain %q", tt.mode, tt.expected)
+		}
+		if tt.hasLimitation {
+			if !strings.Contains(content, tt.limitationContain) {
+				t.Errorf("NetworkMode %q: expected limitation containing %q", tt.mode, tt.limitationContain)
+			}
+		}
+	}
+}
+
+func TestRenderContextFileContent_NoProtectedPaths(t *testing.T) {
+	info := ContextInfo{
+		WorkspacePath: "/workspace",
+		HomeDir:       "/home/code",
+	}
+	content := RenderContextFileContent(info)
+	if strings.Contains(content, "Protected paths") {
+		t.Error("Should not contain protected paths section when none configured")
+	}
+}
+
 // Helper functions
 
 func contains(slice []string, item string) bool {

@@ -390,9 +390,9 @@ func (b *Builder) runBuildScript(scriptPath string) error {
 		return fmt.Errorf("failed to chmod build script: %w", err)
 	}
 
-	// Execute script
 	b.opts.Logger("Executing build script...")
-	if _, err := b.mgr.ExecCommand("/tmp/build.sh", container.ExecCommandOptions{Capture: false}); err != nil {
+	execOpts := container.ExecCommandOptions{Capture: false}
+	if _, err := b.mgr.ExecCommand("/tmp/build.sh", execOpts); err != nil {
 		return fmt.Errorf("build script failed: %w", err)
 	}
 

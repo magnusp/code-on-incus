@@ -98,6 +98,7 @@ type SetupOptions struct {
 	ProtectedPaths        []string             // Paths to mount read-only for security (e.g., .git/hooks, .vscode)
 	PreserveWorkspacePath bool                 // Mount workspace at same path as host instead of /workspace
 	ForwardSSHAgent       bool                 // Forward host SSH agent to container
+	ContextFilePath       string               // Path to custom context .md file on host (overrides tool default)
 	Logger                func(string)
 	ContainerName         string // Use existing container (for testing) - skips container creation
 }
@@ -519,6 +520,28 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		}
 	}
 
+	// 12. Inject sandbox context file (~/SANDBOX_CONTEXT.md)
+	// This runs for both new and resumed sessions so dynamic info stays current.
+	// The file is tool-agnostic — any AI tool can be configured to read it.
+	{
+		networkMode := ""
+		if opts.NetworkConfig != nil {
+			networkMode = string(opts.NetworkConfig.Mode)
+		}
+		ctxInfo := tool.ContextInfo{
+			WorkspacePath:     result.ContainerWorkspacePath,
+			HomeDir:           result.HomeDir,
+			Persistent:        opts.Persistent,
+			NetworkMode:       networkMode,
+			SSHAgentForwarded: result.SSHAgentSocketPath != "",
+			RunAsRoot:         result.RunAsRoot,
+			ProtectedPaths:    opts.ProtectedPaths,
+		}
+		if err := injectContextFile(result.Manager, ctxInfo, opts.ContextFilePath, result.HomeDir, opts.Logger); err != nil {
+			opts.Logger(fmt.Sprintf("Warning: Failed to inject context file: %v", err))
+		}
+	}
+
 	opts.Logger("Container setup complete!")
 	return result, nil
 }
@@ -868,6 +891,41 @@ func setupCLIConfig(mgr *container.Manager, hostCLIConfigPath, homeDir string, t
 		return fmt.Errorf("failed to check %s: %w", stateConfigFilename, err)
 	}
 
+	return nil
+}
+
+// injectContextFile creates ~/SANDBOX_CONTEXT.md inside the container.
+// If customPath is provided, it reads the file from the host and uses its content.
+// Otherwise, it renders the default embedded template with dynamic environment info.
+func injectContextFile(mgr *container.Manager, info tool.ContextInfo, customPath, homeDir string, logger func(string)) error {
+	destPath := filepath.Join(homeDir, "SANDBOX_CONTEXT.md")
+
+	var content string
+	if customPath != "" {
+		data, err := os.ReadFile(customPath)
+		if err != nil {
+			return fmt.Errorf("failed to read custom context file %s: %w", customPath, err)
+		}
+		content = string(data)
+		logger(fmt.Sprintf("Using custom context file: %s", customPath))
+	} else {
+		content = tool.RenderContextFileContent(info)
+		logger("Injecting default sandbox context file")
+	}
+
+	// Create the file
+	if err := mgr.CreateFile(destPath, content); err != nil {
+		return fmt.Errorf("failed to create context file %s: %w", destPath, err)
+	}
+
+	// Fix ownership if running as non-root user
+	if homeDir != "/root" {
+		if err := mgr.Chown(destPath, container.CodeUID, container.CodeUID); err != nil {
+			return fmt.Errorf("failed to set context file ownership: %w", err)
+		}
+	}
+
+	logger(fmt.Sprintf("Context file injected at %s", destPath))
 	return nil
 }
 
