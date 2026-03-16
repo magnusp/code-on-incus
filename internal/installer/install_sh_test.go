@@ -129,6 +129,31 @@ func TestInstallSh_DetectsCI(t *testing.T) {
 	}
 }
 
+// In non-interactive mode, check_firewalld should complete without hanging
+// (it should skip the interactive prompts and return cleanly).
+func TestInstallSh_FirewalldAutoSetup_NonInteractive(t *testing.T) {
+	script := installShPath(t)
+
+	snippet := `
+		export NONINTERACTIVE=1
+		source <(sed '/^main "\$@"/d; /^trap error_handler ERR/d' "` + script + `")
+		check_firewalld
+		echo "COMPLETED"
+	`
+	stdout, _, exitCode := runBashSnippet(t, snippet, "NONINTERACTIVE=1")
+	if exitCode != 0 {
+		t.Fatalf("check_firewalld exited with %d in non-interactive mode; stdout: %s", exitCode, stdout)
+	}
+	if !strings.Contains(stdout, "COMPLETED") {
+		t.Errorf("check_firewalld did not complete in non-interactive mode; stdout: %s", stdout)
+	}
+	// Should not contain any prompt text
+	if strings.Contains(stdout, "[y/N]") {
+		t.Errorf("check_firewalld tried to prompt in non-interactive mode; stdout: %s", stdout)
+	}
+	t.Logf("check_firewalld non-interactive output:\n%s", stdout)
+}
+
 // prompt_choice should use a non-default value ("2") when that is passed as default.
 func TestInstallSh_PromptChoiceCustomDefault(t *testing.T) {
 	script := installShPath(t)

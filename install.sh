@@ -165,31 +165,89 @@ check_group() {
 check_firewalld() {
     echo -e "${BLUE}→ Checking firewalld (for network isolation)...${NC}"
 
-    if command -v firewall-cmd &> /dev/null; then
-        if sudo firewall-cmd --state &> /dev/null 2>&1; then
-            echo -e "${GREEN}✓ Firewalld is installed and running${NC}"
-        else
-            echo -e "${YELLOW}⚠ Firewalld is installed but not running${NC}"
-            echo ""
-            echo "  Network isolation (restricted/allowlist modes) requires firewalld."
-            echo "  Start it with: sudo systemctl enable --now firewalld"
-            echo ""
-        fi
-    else
+    if ! command -v firewall-cmd &> /dev/null; then
         echo -e "${YELLOW}⚠ Firewalld not found${NC}"
         echo ""
         echo "  Network isolation (restricted/allowlist modes) requires firewalld."
         echo "  Without it, you can still use --network=open mode."
         echo ""
-        echo "  To install firewalld (Ubuntu/Debian):"
-        echo "    sudo apt install firewalld"
-        echo "    sudo systemctl enable --now firewalld"
-        echo "    sudo firewall-cmd --permanent --add-masquerade"
-        echo "    sudo firewall-cmd --reload"
+
+        if [ "$NONINTERACTIVE" = "1" ]; then
+            echo -e "${BLUE}→ Non-interactive mode: skipping firewalld setup (optional)${NC}"
+            return
+        fi
+
+        read -p "  Install and configure firewalld now? [y/N] " -n 1 -r </dev/tty
         echo ""
-        echo "  For passwordless firewall management:"
-        echo "    echo \"\$USER ALL=(ALL) NOPASSWD: /usr/bin/firewall-cmd\" | sudo tee /etc/sudoers.d/coi-firewalld"
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}→ Installing firewalld...${NC}"
+            sudo apt install -y firewalld
+            echo -e "${BLUE}→ Enabling and starting firewalld...${NC}"
+            sudo systemctl enable --now firewalld
+            echo -e "${BLUE}→ Enabling masquerade (required for container internet access)...${NC}"
+            sudo firewall-cmd --permanent --add-masquerade
+            sudo firewall-cmd --reload
+            echo -e "${BLUE}→ Setting up passwordless sudo for firewall-cmd...${NC}"
+            local fwcmd_path
+            fwcmd_path="$(command -v firewall-cmd)"
+            echo "$USER ALL=(ALL) NOPASSWD: $fwcmd_path" | sudo tee /etc/sudoers.d/coi-firewalld > /dev/null
+            sudo chmod 0440 /etc/sudoers.d/coi-firewalld
+            echo -e "${GREEN}✓ Firewalld installed and configured${NC}"
+        fi
+        return
+    fi
+
+    if ! sudo -n firewall-cmd --state &> /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Firewalld is installed but not running${NC}"
         echo ""
+        echo "  Network isolation (restricted/allowlist modes) requires firewalld."
+        echo ""
+
+        if [ "$NONINTERACTIVE" = "1" ]; then
+            echo -e "${BLUE}→ Non-interactive mode: skipping firewalld start (optional)${NC}"
+            return
+        fi
+
+        read -p "  Start and enable firewalld now? [y/N] " -n 1 -r </dev/tty
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}→ Enabling and starting firewalld...${NC}"
+            sudo systemctl enable --now firewalld
+            echo -e "${GREEN}✓ Firewalld started${NC}"
+
+            # Check masquerade after starting
+            if ! sudo -n firewall-cmd --query-masquerade &> /dev/null; then
+                echo -e "${BLUE}→ Enabling masquerade (required for container internet access)...${NC}"
+                sudo firewall-cmd --permanent --add-masquerade
+                sudo firewall-cmd --reload
+                echo -e "${GREEN}✓ Masquerade enabled${NC}"
+            fi
+        fi
+        return
+    fi
+
+    # Firewalld is installed and running — check masquerade
+    if sudo -n firewall-cmd --query-masquerade &> /dev/null; then
+        echo -e "${GREEN}✓ Firewalld is running with masquerade enabled${NC}"
+    else
+        echo -e "${YELLOW}⚠ Firewalld is running but masquerade is not enabled${NC}"
+        echo ""
+        echo "  Masquerade is required for containers to reach the internet."
+        echo ""
+
+        if [ "$NONINTERACTIVE" = "1" ]; then
+            echo -e "${BLUE}→ Non-interactive mode: skipping masquerade setup (optional)${NC}"
+            return
+        fi
+
+        read -p "  Enable masquerade now? [y/N] " -n 1 -r </dev/tty
+        echo ""
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo -e "${BLUE}→ Enabling masquerade...${NC}"
+            sudo firewall-cmd --permanent --add-masquerade
+            sudo firewall-cmd --reload
+            echo -e "${GREEN}✓ Masquerade enabled${NC}"
+        fi
     fi
 }
 
