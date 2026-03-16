@@ -36,3 +36,46 @@ func TestIncusVersionIntegration(t *testing.T) {
 		t.Errorf("major version %d outside reasonable range [5, 99]", v.Major)
 	}
 }
+
+// CheckMinimumVersion should return nil (no error) when the running Incus daemon meets the
+// minimum version requirement, or a non-nil error containing "zabbly" when it does not.
+// On a system with Incus >= 6.1 this test expects nil; on older Incus it expects an error.
+func TestCheckMinimumVersionIntegration(t *testing.T) {
+	if _, err := exec.LookPath("incus"); err != nil {
+		t.Skip("incus not found, skipping integration test")
+	}
+	if !Available() {
+		t.Skip("incus daemon not running, skipping integration test")
+	}
+
+	err := CheckMinimumVersion()
+
+	// Get the actual version so we can verify the result makes sense
+	output, verr := IncusOutput("version")
+	if verr != nil {
+		t.Logf("Could not get version for verification: %v", verr)
+		return
+	}
+	versionStr, verr := ExtractServerVersion(output)
+	if verr != nil {
+		t.Logf("Could not extract version for verification: %v", verr)
+		return
+	}
+	v, verr := ParseIncusVersion(versionStr)
+	if verr != nil {
+		t.Logf("Could not parse version for verification: %v", verr)
+		return
+	}
+
+	if MeetsMinimumVersion(v) {
+		if err != nil {
+			t.Errorf("Version %s meets minimum but CheckMinimumVersion returned error: %v", versionStr, err)
+		}
+	} else {
+		if err == nil {
+			t.Errorf("Version %s is below minimum but CheckMinimumVersion returned nil", versionStr)
+		}
+	}
+
+	t.Logf("CheckMinimumVersion: version=%s err=%v", versionStr, err)
+}
