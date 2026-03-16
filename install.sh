@@ -14,6 +14,48 @@ BINARY_NAME="coi"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-latest}"
 
+# Detect non-interactive mode (piped input, CI, or explicit opt-in)
+if [ "${NONINTERACTIVE:-0}" = "1" ] || [ "${CI:-}" = "true" ] || ! [ -t 0 ]; then
+    NONINTERACTIVE=1
+else
+    NONINTERACTIVE=0
+fi
+
+# Prompt user for yes/no confirmation.
+# In non-interactive mode (curl|bash, CI), exits with error since we can't ask.
+# In interactive mode, reads from /dev/tty so it works even when script is piped.
+prompt_continue() {
+    local message="${1:-Continue anyway?}"
+    if [ "$NONINTERACTIVE" = "1" ]; then
+        echo -e "${YELLOW}⚠ Non-interactive mode: cannot prompt. Aborting.${NC}"
+        echo "  Re-run the script directly (not piped) or fix the issue above."
+        exit 1
+    fi
+    read -p "$message [y/N] " -n 1 -r </dev/tty
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 1
+    fi
+}
+
+# Prompt user for a choice (single character).
+# In non-interactive mode, returns the default value.
+# In interactive mode, reads from /dev/tty.
+prompt_choice() {
+    local message="$1"
+    local default="$2"
+    if [ "$NONINTERACTIVE" = "1" ]; then
+        echo -e "${BLUE}→ Non-interactive mode: using default ($default)${NC}"
+        REPLY="$default"
+        return
+    fi
+    read -p "$message" -n 1 -r </dev/tty
+    echo ""
+    if [ -z "$REPLY" ]; then
+        REPLY="$default"
+    fi
+}
+
 # Detect OS and architecture
 detect_platform() {
     local os
@@ -67,11 +109,7 @@ check_incus() {
         echo "    sudo incus admin init --auto"
         echo "    sudo usermod -aG incus-admin \$USER"
         echo ""
-        read -p "Continue installation anyway? [y/N] " -n 1 -r
-        echo
-        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-            exit 1
-        fi
+        prompt_continue "Continue installation anyway?"
     else
         local incus_version_output
         incus_version_output="$(incus version 2>/dev/null)"
@@ -102,11 +140,7 @@ check_incus() {
                     echo "  Please install Incus >= 6.1 from the Zabbly repository:"
                     echo "    https://github.com/zabbly/incus"
                     echo ""
-                    read -p "Continue installation anyway? [y/N] " -n 1 -r
-                    echo
-                    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                        exit 1
-                    fi
+                    prompt_continue "Continue installation anyway?"
                 fi
             fi
         fi
@@ -347,8 +381,7 @@ main() {
 
     # Check if releases exist
     if curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" &> /dev/null; then
-        read -p "Choose [1/2] (default: 1): " -n 1 -r
-        echo ""
+        prompt_choice "Choose [1/2] (default: 1): " "1"
 
         case $REPLY in
             2)
