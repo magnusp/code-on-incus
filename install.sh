@@ -188,13 +188,16 @@ check_firewalld() {
             sudo firewall-cmd --permanent --add-masquerade
             sudo firewall-cmd --reload
             echo -e "${BLUE}→ Setting up passwordless sudo for firewall-cmd...${NC}"
-            echo "$USER ALL=(ALL) NOPASSWD: /usr/bin/firewall-cmd" | sudo tee /etc/sudoers.d/coi-firewalld > /dev/null
+            local fwcmd_path
+            fwcmd_path="$(command -v firewall-cmd)"
+            echo "$USER ALL=(ALL) NOPASSWD: $fwcmd_path" | sudo tee /etc/sudoers.d/coi-firewalld > /dev/null
+            sudo chmod 0440 /etc/sudoers.d/coi-firewalld
             echo -e "${GREEN}✓ Firewalld installed and configured${NC}"
         fi
         return
     fi
 
-    if ! sudo firewall-cmd --state &> /dev/null 2>&1; then
+    if ! sudo -n firewall-cmd --state &> /dev/null 2>&1; then
         echo -e "${YELLOW}⚠ Firewalld is installed but not running${NC}"
         echo ""
         echo "  Network isolation (restricted/allowlist modes) requires firewalld."
@@ -213,7 +216,7 @@ check_firewalld() {
             echo -e "${GREEN}✓ Firewalld started${NC}"
 
             # Check masquerade after starting
-            if ! sudo firewall-cmd --query-masquerade &> /dev/null; then
+            if ! sudo -n firewall-cmd --query-masquerade &> /dev/null; then
                 echo -e "${BLUE}→ Enabling masquerade (required for container internet access)...${NC}"
                 sudo firewall-cmd --permanent --add-masquerade
                 sudo firewall-cmd --reload
@@ -224,7 +227,7 @@ check_firewalld() {
     fi
 
     # Firewalld is installed and running — check masquerade
-    if sudo firewall-cmd --query-masquerade &> /dev/null; then
+    if sudo -n firewall-cmd --query-masquerade &> /dev/null; then
         echo -e "${GREEN}✓ Firewalld is running with masquerade enabled${NC}"
     else
         echo -e "${YELLOW}⚠ Firewalld is running but masquerade is not enabled${NC}"
