@@ -408,9 +408,12 @@ post_install() {
     fi
 
     if ! command -v firewall-cmd &> /dev/null; then
-        echo -e "${YELLOW}⚠ For network isolation (restricted/allowlist modes), install firewalld:${NC}"
-        echo "   ${BLUE}sudo apt install firewalld && sudo systemctl enable --now firewalld${NC}"
-        echo "   See README for full setup instructions."
+        echo -e "${YELLOW}⚠ Firewalld is not installed — network isolation (restricted/allowlist modes) will not work.${NC}"
+        echo "   Re-run this installer or set up manually: ${BLUE}sudo apt install firewalld && sudo systemctl enable --now firewalld && sudo firewall-cmd --permanent --add-masquerade && sudo firewall-cmd --reload${NC}"
+        echo ""
+    elif ! sudo -n firewall-cmd --query-masquerade &> /dev/null 2>&1; then
+        echo -e "${YELLOW}⚠ Firewalld masquerade is not enabled — containers may not reach the internet.${NC}"
+        echo "   Run: ${BLUE}sudo firewall-cmd --permanent --add-masquerade && sudo firewall-cmd --reload${NC}"
         echo ""
     fi
 
