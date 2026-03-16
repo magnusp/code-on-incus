@@ -11,8 +11,9 @@ import (
 	"github.com/mensfeld/code-on-incus/internal/nftmonitor"
 )
 
-// TestCheckIncus_VersionCheck verifies that CheckIncus returns version info
-// and validates it against the minimum version requirement.
+// CheckIncus should return a parseable version string in its details and the status should
+// match the version: StatusOK when >= 6.1 (with version in message), StatusFailed when below
+// (with zabbly upgrade link in message).
 func TestCheckIncus_VersionCheck(t *testing.T) {
 	if _, err := exec.LookPath("incus"); err != nil {
 		t.Skip("incus not found, skipping integration test")
@@ -68,8 +69,9 @@ func TestCheckIncus_VersionCheck(t *testing.T) {
 	t.Logf("CheckIncus: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
 }
 
-// TestEvaluateIncusVersion_OldVersion verifies that old Incus versions
-// produce a StatusFailed result with upgrade instructions.
+// evaluateIncusVersion should return StatusFailed with zabbly upgrade instructions for old versions
+// (6.0.x, 5.x), StatusOK for versions meeting minimum (6.1+, 7.x), and degrade gracefully
+// (StatusOK) when the version output is unparseable or empty.
 func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -150,8 +152,9 @@ func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
 	}
 }
 
-// TestCheckNFTables_VersionCheck verifies that CheckNFTables returns version info
-// and validates it against the minimum version requirement.
+// CheckNFTables should return a parseable version string in its details and the status should
+// match the version: StatusOK when >= 0.9.0 (with version in message), StatusFailed when below.
+// If sudo access is not configured, StatusWarning is acceptable even when the version is fine.
 func TestCheckNFTables_VersionCheck(t *testing.T) {
 	if _, err := exec.LookPath("nft"); err != nil {
 		t.Skip("nft not found, skipping integration test")
@@ -196,8 +199,9 @@ func TestCheckNFTables_VersionCheck(t *testing.T) {
 	t.Logf("CheckNFTables: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
 }
 
-// TestEvaluateNFTVersion_OldVersion verifies that old nftables versions
-// produce a StatusFailed result with upgrade instructions.
+// evaluateNFTVersion should return a StatusFailed HealthCheck for old versions (0.8.x, 0.7.x),
+// nil for versions meeting minimum (0.9.0+, 1.x), and nil when the version output is
+// unparseable or empty (graceful degradation, version check is skipped).
 func TestEvaluateNFTVersion_OldVersion(t *testing.T) {
 	tests := []struct {
 		name           string
@@ -266,8 +270,8 @@ func TestEvaluateNFTVersion_OldVersion(t *testing.T) {
 	}
 }
 
-// TestCheckContainerConnectivity_NoImage verifies that the check is skipped
-// when the specified image doesn't exist.
+// CheckContainerConnectivity should return StatusWarning with "Skipped" and "image not available"
+// when the specified image does not exist, rather than attempting to launch a container.
 func TestCheckContainerConnectivity_NoImage(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -297,8 +301,8 @@ func TestCheckContainerConnectivity_NoImage(t *testing.T) {
 	t.Logf("Correctly skipped check for non-existent image: %s", result.Message)
 }
 
-// TestCheckContainerConnectivity_WithImage verifies the full connectivity check
-// when a valid image exists. This test actually launches a container.
+// CheckContainerConnectivity should complete without hanging when a valid image exists,
+// return a definitive status (OK/Warning/Failed), and leave no leftover health-check containers.
 func TestCheckContainerConnectivity_WithImage(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -348,8 +352,9 @@ func TestCheckContainerConnectivity_WithImage(t *testing.T) {
 	}
 }
 
-// TestCheckContainerConnectivity_EmptyImageName verifies that empty image name
-// defaults to "coi".
+// CheckContainerConnectivity should default to the "coi" image when called with an empty
+// image name, skipping with StatusWarning if the default image doesn't exist or running
+// the full check if it does.
 func TestCheckContainerConnectivity_EmptyImageName(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -389,8 +394,8 @@ func TestCheckContainerConnectivity_EmptyImageName(t *testing.T) {
 	}
 }
 
-// TestCheckContainerConnectivity_Cleanup verifies that containers are cleaned up
-// even when the check fails or encounters errors.
+// CheckContainerConnectivity should not leak containers even after multiple consecutive runs;
+// the number of coi-health-check-* containers after 3 checks should not exceed the count before.
 func TestCheckContainerConnectivity_Cleanup(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -430,8 +435,8 @@ func TestCheckContainerConnectivity_Cleanup(t *testing.T) {
 	}
 }
 
-// TestCheckNetworkRestriction_NoFirewall verifies that the check is skipped
-// when firewalld is not available.
+// CheckNetworkRestriction should return StatusWarning with "firewalld not available" when
+// firewalld is not installed or not running, rather than attempting the restriction check.
 func TestCheckNetworkRestriction_NoFirewall(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -465,8 +470,8 @@ func TestCheckNetworkRestriction_NoFirewall(t *testing.T) {
 	t.Logf("Correctly skipped check when firewall unavailable: %s", result.Message)
 }
 
-// TestCheckNetworkRestriction_NoImage verifies that the check is skipped
-// when the specified image doesn't exist.
+// CheckNetworkRestriction should return StatusWarning with "image not available" when the
+// specified image does not exist, rather than attempting to launch a container.
 func TestCheckNetworkRestriction_NoImage(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -501,8 +506,9 @@ func TestCheckNetworkRestriction_NoImage(t *testing.T) {
 	t.Logf("Correctly skipped check for non-existent image: %s", result.Message)
 }
 
-// TestCheckNetworkRestriction_WithImage verifies the full network restriction check
-// when firewall and image are available.
+// CheckNetworkRestriction should complete and return a definitive status (OK/Warning/Failed)
+// when both firewalld and the COI image are available, and leave no leftover restriction-check
+// containers afterwards.
 func TestCheckNetworkRestriction_WithImage(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -561,8 +567,8 @@ func TestCheckNetworkRestriction_WithImage(t *testing.T) {
 	}
 }
 
-// TestCheckNetworkRestriction_Cleanup verifies that containers and firewall rules
-// are cleaned up after the check.
+// CheckNetworkRestriction should not leak containers; the number of coi-restriction-check-*
+// containers after the check should not exceed the count before.
 func TestCheckNetworkRestriction_Cleanup(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {
@@ -605,7 +611,8 @@ func TestCheckNetworkRestriction_Cleanup(t *testing.T) {
 	}
 }
 
-// TestCheckAuditLogDirectory verifies audit log directory check
+// CheckAuditLogDirectory should return StatusOK with a non-empty path in details, confirming
+// the audit log directory is accessible.
 func TestCheckAuditLogDirectory(t *testing.T) {
 	result := CheckAuditLogDirectory()
 
@@ -625,7 +632,8 @@ func TestCheckAuditLogDirectory(t *testing.T) {
 	t.Logf("Audit log directory check passed: %s", result.Message)
 }
 
-// TestCheckCgroupAvailability verifies cgroup availability check
+// CheckCgroupAvailability should return StatusOK (cgroups v2) or StatusWarning (cgroups v1)
+// with a non-empty path in details, confirming the cgroup filesystem is mounted.
 func TestCheckCgroupAvailability(t *testing.T) {
 	result := CheckCgroupAvailability()
 
@@ -646,7 +654,8 @@ func TestCheckCgroupAvailability(t *testing.T) {
 	t.Logf("Cgroup availability check: %s (status: %s)", result.Message, result.Status)
 }
 
-// TestCheckMonitoringConfiguration verifies monitoring configuration check
+// CheckMonitoringConfiguration should return StatusOK or StatusWarning with an "enabled"
+// boolean in details, depending on whether monitoring is configured in the default config.
 func TestCheckMonitoringConfiguration(t *testing.T) {
 	// Use default config
 	cfg := config.GetDefaultConfig()
@@ -671,7 +680,8 @@ func TestCheckMonitoringConfiguration(t *testing.T) {
 		result.Message, result.Details["enabled"])
 }
 
-// TestCheckProcessMonitoringCapability verifies process monitoring capability check
+// CheckProcessMonitoringCapability should complete with a definitive status (OK/Warning/Failed)
+// depending on whether the environment supports process monitoring (cgroups, image availability).
 func TestCheckProcessMonitoringCapability(t *testing.T) {
 	// Skip if incus is not available
 	if _, err := exec.LookPath("incus"); err != nil {

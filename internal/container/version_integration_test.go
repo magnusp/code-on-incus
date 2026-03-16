@@ -5,6 +5,8 @@ import (
 	"testing"
 )
 
+// COI should be able to parse the real Incus server version from `incus version` output
+// and the parsed major version should fall within a reasonable range (5-99).
 func TestIncusVersionIntegration(t *testing.T) {
 	if _, err := exec.LookPath("incus"); err != nil {
 		t.Skip("incus not found, skipping integration test")
