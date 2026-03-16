@@ -2046,7 +2046,7 @@ func CheckDockerForwardPolicy() HealthCheck {
 	iptablesAvailable := network.IptablesAvailable()
 
 	details := map[string]interface{}{
-		"docker_running":     dockerRunning,
+		"docker_running":      dockerRunning,
 		"forward_policy_drop": forwardDrop,
 		"firewalld_available": firewallAvailable,
 		"iptables_available":  iptablesAvailable,
