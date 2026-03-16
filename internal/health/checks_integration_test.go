@@ -8,7 +8,263 @@ import (
 	"github.com/mensfeld/code-on-incus/internal/config"
 	"github.com/mensfeld/code-on-incus/internal/container"
 	"github.com/mensfeld/code-on-incus/internal/network"
+	"github.com/mensfeld/code-on-incus/internal/nftmonitor"
 )
+
+// TestCheckIncus_VersionCheck verifies that CheckIncus returns version info
+// and validates it against the minimum version requirement.
+func TestCheckIncus_VersionCheck(t *testing.T) {
+	if _, err := exec.LookPath("incus"); err != nil {
+		t.Skip("incus not found, skipping integration test")
+	}
+
+	if !container.Available() {
+		t.Skip("incus daemon not running, skipping integration test")
+	}
+
+	result := CheckIncus()
+
+	if result.Name != "incus" {
+		t.Errorf("Expected check name 'incus', got '%s'", result.Name)
+	}
+
+	// Should be OK or Failed (version too old)
+	if result.Status != StatusOK && result.Status != StatusFailed {
+		t.Errorf("Expected StatusOK or StatusFailed, got %s: %s", result.Status, result.Message)
+	}
+
+	// Details should contain a version
+	if result.Details == nil || result.Details["version"] == nil {
+		t.Error("Expected 'version' in details")
+	}
+
+	versionStr, ok := result.Details["version"].(string)
+	if !ok || versionStr == "" {
+		t.Errorf("Expected non-empty version string in details, got %v", result.Details["version"])
+	}
+
+	// Verify the version is parseable
+	v, err := container.ParseIncusVersion(versionStr)
+	if err != nil {
+		t.Fatalf("Version from CheckIncus (%q) should be parseable: %v", versionStr, err)
+	}
+
+	if container.MeetsMinimumVersion(v) {
+		if result.Status != StatusOK {
+			t.Errorf("Version %s meets minimum but status is %s: %s", versionStr, result.Status, result.Message)
+		}
+		if !strings.Contains(result.Message, versionStr) {
+			t.Errorf("Message should contain version %q, got %q", versionStr, result.Message)
+		}
+	} else {
+		if result.Status != StatusFailed {
+			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
+		}
+		if !strings.Contains(result.Message, "zabbly") {
+			t.Errorf("Failed message should mention zabbly, got %q", result.Message)
+		}
+	}
+
+	t.Logf("CheckIncus: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
+}
+
+// TestEvaluateIncusVersion_OldVersion verifies that old Incus versions
+// produce a StatusFailed result with upgrade instructions.
+func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
+	tests := []struct {
+		name           string
+		versionOutput  string
+		expectStatus   CheckStatus
+		expectContains string
+	}{
+		{
+			"Ubuntu 6.0.x fails",
+			"Client version: 6.0.3\nServer version: 6.0.3",
+			StatusFailed,
+			"zabbly",
+		},
+		{
+			"6.0.0 fails",
+			"Client version: 6.0.0\nServer version: 6.0.0",
+			StatusFailed,
+			"6.1",
+		},
+		{
+			"5.x fails",
+			"Server version: 5.21",
+			StatusFailed,
+			"zabbly",
+		},
+		{
+			"6.1 passes",
+			"Client version: 6.1\nServer version: 6.1",
+			StatusOK,
+			"6.1",
+		},
+		{
+			"6.20 passes",
+			"Client version: 6.20\nServer version: 6.20",
+			StatusOK,
+			"6.20",
+		},
+		{
+			"7.0 passes",
+			"Server version: 7.0",
+			StatusOK,
+			"7.0",
+		},
+		{
+			"single line fallback",
+			"6.0.1",
+			StatusFailed,
+			"zabbly",
+		},
+		{
+			"unparseable degrades gracefully",
+			"Server version: unknown-dev",
+			StatusOK,
+			"unknown-dev",
+		},
+		{
+			"empty output degrades gracefully",
+			"",
+			StatusOK,
+			"version unknown",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := evaluateIncusVersion(tt.versionOutput)
+
+			if result.Name != "incus" {
+				t.Errorf("Expected check name 'incus', got %q", result.Name)
+			}
+			if result.Status != tt.expectStatus {
+				t.Errorf("Expected status %s, got %s: %s", tt.expectStatus, result.Status, result.Message)
+			}
+			if !strings.Contains(result.Message, tt.expectContains) {
+				t.Errorf("Expected message to contain %q, got %q", tt.expectContains, result.Message)
+			}
+		})
+	}
+}
+
+// TestCheckNFTables_VersionCheck verifies that CheckNFTables returns version info
+// and validates it against the minimum version requirement.
+func TestCheckNFTables_VersionCheck(t *testing.T) {
+	if _, err := exec.LookPath("nft"); err != nil {
+		t.Skip("nft not found, skipping integration test")
+	}
+
+	result := CheckNFTables()
+
+	if result.Name != "nftables" {
+		t.Errorf("Expected check name 'nftables', got '%s'", result.Name)
+	}
+
+	// Details should contain a version
+	if result.Details == nil || result.Details["version"] == nil {
+		t.Skipf("No version in details (nft --version may have failed): %s", result.Message)
+	}
+
+	versionStr, ok := result.Details["version"].(string)
+	if !ok || versionStr == "" {
+		t.Errorf("Expected non-empty version string in details, got %v", result.Details["version"])
+	}
+
+	// Verify the version is parseable
+	v, err := nftmonitor.ParseNFTVersion(versionStr)
+	if err != nil {
+		t.Fatalf("Version from CheckNFTables (%q) should be parseable: %v", versionStr, err)
+	}
+
+	if nftmonitor.MeetsMinimumNFTVersion(v) {
+		// Version meets minimum — status should be OK (if sudo works) or Warning (sudo issue)
+		if result.Status == StatusFailed {
+			t.Errorf("Version %s meets minimum but status is Failed: %s", versionStr, result.Message)
+		}
+		if result.Status == StatusOK && !strings.Contains(result.Message, versionStr) {
+			t.Errorf("OK message should contain version %q, got %q", versionStr, result.Message)
+		}
+	} else {
+		if result.Status != StatusFailed {
+			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
+		}
+	}
+
+	t.Logf("CheckNFTables: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
+}
+
+// TestEvaluateNFTVersion_OldVersion verifies that old nftables versions
+// produce a StatusFailed result with upgrade instructions.
+func TestEvaluateNFTVersion_OldVersion(t *testing.T) {
+	tests := []struct {
+		name           string
+		versionOutput  string
+		expectFailed   bool
+		expectContains string
+	}{
+		{
+			"0.8.3 fails",
+			"nftables v0.8.3 (Topsy)",
+			true,
+			"0.9.0",
+		},
+		{
+			"0.7.0 fails",
+			"nftables v0.7.0 (Scruffy)",
+			true,
+			"nftables",
+		},
+		{
+			"0.9.0 passes",
+			"nftables v0.9.0 (Fearless Fosdick)",
+			false,
+			"",
+		},
+		{
+			"1.0.9 passes",
+			"nftables v1.0.9 (Old Doc Yak #3)",
+			false,
+			"",
+		},
+		{
+			"unparseable returns nil",
+			"some garbage output",
+			false,
+			"",
+		},
+		{
+			"empty returns nil",
+			"",
+			false,
+			"",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := evaluateNFTVersion("/usr/sbin/nft", tt.versionOutput)
+
+			if tt.expectFailed {
+				if result == nil {
+					t.Fatal("Expected a failed HealthCheck, got nil")
+				}
+				if result.Status != StatusFailed {
+					t.Errorf("Expected StatusFailed, got %s: %s", result.Status, result.Message)
+				}
+				if !strings.Contains(result.Message, tt.expectContains) {
+					t.Errorf("Expected message to contain %q, got %q", tt.expectContains, result.Message)
+				}
+			} else {
+				if result != nil {
+					t.Errorf("Expected nil (version OK or unparseable), got status=%s: %s", result.Status, result.Message)
+				}
+			}
+		})
+	}
+}
 
 // TestCheckContainerConnectivity_NoImage verifies that the check is skipped
 // when the specified image doesn't exist.
