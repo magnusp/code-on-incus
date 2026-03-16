@@ -106,8 +106,7 @@ def test_health_reports_docker_forward_policy(coi_binary):
     ]
     for field in expected_fields:
         assert field in details, (
-            f"Missing detail field '{field}' in docker_forward_policy check. "
-            f"Details: {details}"
+            f"Missing detail field '{field}' in docker_forward_policy check. Details: {details}"
         )
 
 
