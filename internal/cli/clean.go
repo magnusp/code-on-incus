@@ -31,6 +31,7 @@ Orphaned resources include:
 - Orphaned veth interfaces (network pairs with no master bridge)
 - Orphaned firewall rules (rules for container IPs that no longer exist)
 - Orphaned firewalld zone bindings (stale veth entries in firewalld zones)
+- Orphaned iptables bridge rules (coi-bridge-forward rules with no containers running)
 
 Examples:
   coi clean                    # Clean stopped containers
@@ -241,7 +242,7 @@ func cleanOrphanedResources() (int, bool) {
 		return 0, false
 	}
 
-	totalOrphans := len(orphans.Veths) + len(orphans.FirewallRules) + len(orphans.FirewalldZoneBindings) + len(orphans.NFTMonitorRules)
+	totalOrphans := len(orphans.Veths) + len(orphans.FirewallRules) + len(orphans.FirewalldZoneBindings) + len(orphans.NFTMonitorRules) + len(orphans.IptablesBridgeRules)
 
 	if totalOrphans == 0 {
 		fmt.Println("  (no orphaned resources found)")
@@ -269,7 +270,7 @@ func cleanOrphanedResources() (int, bool) {
 
 // printOrphanedResources prints the list of orphaned resources found.
 func printOrphanedResources(orphans *cleanup.OrphanedResources) {
-	totalOrphans := len(orphans.Veths) + len(orphans.FirewallRules) + len(orphans.FirewalldZoneBindings) + len(orphans.NFTMonitorRules)
+	totalOrphans := len(orphans.Veths) + len(orphans.FirewallRules) + len(orphans.FirewalldZoneBindings) + len(orphans.NFTMonitorRules) + len(orphans.IptablesBridgeRules)
 	fmt.Printf("Found %d orphaned resource(s):\n", totalOrphans)
 
 	if len(orphans.Veths) > 0 {
@@ -313,6 +314,13 @@ func printOrphanedResources(orphans *cleanup.OrphanedResources) {
 			fmt.Printf("    ... and %d more\n", len(orphans.NFTMonitorRules)-10)
 		}
 	}
+
+	if len(orphans.IptablesBridgeRules) > 0 {
+		fmt.Printf("  Orphaned iptables bridge rules (%d):\n", len(orphans.IptablesBridgeRules))
+		for _, rule := range orphans.IptablesBridgeRules {
+			fmt.Printf("    - %s\n", rule)
+		}
+	}
 }
 
 // doCleanOrphanedResources performs the actual cleanup of orphaned resources.
@@ -340,6 +348,11 @@ func doCleanOrphanedResources(orphans *cleanup.OrphanedResources) int {
 	if len(orphans.NFTMonitorRules) > 0 {
 		nftRulesCleaned, _ := cleanup.CleanupOrphanedNFTMonitorRules(orphans.NFTMonitorRules, logger)
 		cleaned += nftRulesCleaned
+	}
+
+	if len(orphans.IptablesBridgeRules) > 0 {
+		iptablesCleaned, _ := cleanup.CleanupOrphanedIptablesBridgeRules(orphans.IptablesBridgeRules, logger)
+		cleaned += iptablesCleaned
 	}
 
 	return cleaned

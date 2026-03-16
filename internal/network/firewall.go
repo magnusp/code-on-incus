@@ -386,6 +386,140 @@ func MasqueradeEnabled() bool {
 	return cmd.Run() == nil
 }
 
+// IptablesAvailable checks if the iptables binary is installed
+func IptablesAvailable() bool {
+	_, err := exec.LookPath("iptables")
+	return err == nil
+}
+
+// ForwardPolicyIsDrop checks if the iptables FORWARD chain policy is DROP
+func ForwardPolicyIsDrop() bool {
+	cmd := exec.Command("sudo", "-n", "iptables", "-L", "FORWARD", "-n")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+
+	// First line looks like: "Chain FORWARD (policy DROP)"
+	lines := strings.SplitN(string(output), "\n", 2)
+	if len(lines) == 0 {
+		return false
+	}
+
+	return strings.Contains(lines[0], "policy DROP")
+}
+
+// NeedsIptablesFallback returns true when firewalld is not available but
+// the FORWARD chain policy is DROP (typically caused by Docker) and iptables
+// is available as a fallback
+func NeedsIptablesFallback() bool {
+	return !FirewallAvailable() && ForwardPolicyIsDrop() && IptablesAvailable()
+}
+
+// GetIncusBridgeName extracts the bridge/network name from the Incus default profile
+func GetIncusBridgeName() (string, error) {
+	profileOutput, err := container.IncusOutput("profile", "device", "show", "default")
+	if err != nil {
+		return "", fmt.Errorf("failed to get default profile: %w", err)
+	}
+
+	lines := strings.Split(profileOutput, "\n")
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "eth0:" {
+			for j := i + 1; j < len(lines) && j < i+10; j++ {
+				if strings.Contains(lines[j], "network:") {
+					parts := strings.Split(lines[j], ":")
+					if len(parts) >= 2 {
+						return strings.TrimSpace(parts[1]), nil
+					}
+				}
+			}
+			break
+		}
+	}
+
+	return "", fmt.Errorf("could not determine network/bridge name from default profile")
+}
+
+// EnsureIptablesBridgeRules idempotently adds FORWARD ACCEPT rules for the
+// given bridge interface. The rules are tagged with a comment so they can be
+// identified for cleanup.
+func EnsureIptablesBridgeRules(bridgeName string) error {
+	rules := [][]string{
+		{"-i", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward"},
+		{"-o", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward"},
+	}
+
+	for _, ruleSpec := range rules {
+		if iptablesRuleExists("FORWARD", ruleSpec...) {
+			continue
+		}
+
+		args := append([]string{"-n", "iptables", "-I", "FORWARD"}, ruleSpec...)
+		cmd := exec.Command("sudo", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to add iptables rule: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+	}
+
+	return nil
+}
+
+// RemoveIptablesBridgeRules removes the coi-bridge-forward iptables rules for
+// the given bridge. Tolerant if rules are already absent.
+func RemoveIptablesBridgeRules(bridgeName string) error {
+	rules := [][]string{
+		{"-i", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward"},
+		{"-o", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward"},
+	}
+
+	for _, ruleSpec := range rules {
+		if !iptablesRuleExists("FORWARD", ruleSpec...) {
+			continue
+		}
+
+		args := append([]string{"-n", "iptables", "-D", "FORWARD"}, ruleSpec...)
+		cmd := exec.Command("sudo", args...)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			return fmt.Errorf("failed to remove iptables rule: %s: %w", strings.TrimSpace(string(output)), err)
+		}
+	}
+
+	return nil
+}
+
+// IptablesBridgeRulesExist checks whether the coi-bridge-forward rules exist
+// for the given bridge name
+func IptablesBridgeRulesExist(bridgeName string) bool {
+	inRule := iptablesRuleExists("FORWARD",
+		"-i", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward")
+	outRule := iptablesRuleExists("FORWARD",
+		"-o", bridgeName, "-j", "ACCEPT", "-m", "comment", "--comment", "coi-bridge-forward")
+	return inRule && outRule
+}
+
+// iptablesRuleExists checks if a specific iptables rule exists using iptables -C
+func iptablesRuleExists(chain string, ruleSpec ...string) bool {
+	args := append([]string{"-n", "iptables", "-C", chain}, ruleSpec...)
+	cmd := exec.Command("sudo", args...)
+	return cmd.Run() == nil
+}
+
+// IsDockerRunning checks if the Docker daemon is running
+func IsDockerRunning() bool {
+	// Try systemctl first
+	cmd := exec.Command("systemctl", "is-active", "--quiet", "docker")
+	if cmd.Run() == nil {
+		return true
+	}
+
+	// Fall back to checking for the process
+	cmd = exec.Command("pgrep", "-x", "dockerd")
+	return cmd.Run() == nil
+}
+
 // GetContainerVethName retrieves the host-side veth interface name for a container
 func GetContainerVethName(containerName string) (string, error) {
 	output, err := container.IncusOutput("list", containerName, "--format=json")
