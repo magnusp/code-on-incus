@@ -129,7 +129,12 @@ func CheckIncus() HealthCheck {
 		}
 	}
 
-	// Extract and parse server version
+	return evaluateIncusVersion(versionOutput)
+}
+
+// evaluateIncusVersion evaluates the raw `incus version` output and returns
+// the appropriate health check result, including minimum version validation.
+func evaluateIncusVersion(versionOutput string) HealthCheck {
 	versionStr, err := container.ExtractServerVersion(versionOutput)
 	if err != nil {
 		return HealthCheck{
@@ -154,7 +159,7 @@ func CheckIncus() HealthCheck {
 	if !container.MeetsMinimumVersion(v) {
 		return HealthCheck{
 			Name:    "incus",
-			Status:  StatusWarning,
+			Status:  StatusFailed,
 			Message: container.FormatMinVersionError(v),
 			Details: map[string]interface{}{
 				"version": versionStr,
@@ -1539,21 +1544,12 @@ func CheckNFTables() HealthCheck {
 
 	var nftVersion string
 	if vErr == nil {
+		if result := evaluateNFTVersion(nftPath, string(versionOutput)); result != nil {
+			return *result
+		}
+		// Version OK — extract for display
 		if vs, err := nftmonitor.ExtractNFTVersion(string(versionOutput)); err == nil {
 			nftVersion = vs
-			if v, err := nftmonitor.ParseNFTVersion(vs); err == nil {
-				if !nftmonitor.MeetsMinimumNFTVersion(v) {
-					return HealthCheck{
-						Name:    "nftables",
-						Status:  StatusWarning,
-						Message: nftmonitor.FormatMinNFTVersionError(v),
-						Details: map[string]interface{}{
-							"nft_path": nftPath,
-							"version":  vs,
-						},
-					}
-				}
-			}
 		}
 	}
 
@@ -1588,6 +1584,34 @@ func CheckNFTables() HealthCheck {
 			"version":  nftVersion,
 		},
 	}
+}
+
+// evaluateNFTVersion evaluates the raw `nft --version` output and returns
+// a failed health check if the version is below minimum. Returns nil if OK.
+func evaluateNFTVersion(nftPath, versionOutput string) *HealthCheck {
+	vs, err := nftmonitor.ExtractNFTVersion(versionOutput)
+	if err != nil {
+		return nil // Can't parse, skip version check
+	}
+
+	v, err := nftmonitor.ParseNFTVersion(vs)
+	if err != nil {
+		return nil // Can't parse, skip version check
+	}
+
+	if !nftmonitor.MeetsMinimumNFTVersion(v) {
+		return &HealthCheck{
+			Name:    "nftables",
+			Status:  StatusFailed,
+			Message: nftmonitor.FormatMinNFTVersionError(v),
+			Details: map[string]interface{}{
+				"nft_path": nftPath,
+				"version":  vs,
+			},
+		}
+	}
+
+	return nil
 }
 
 // CheckSystemdJournal checks if systemd-journal access is available
