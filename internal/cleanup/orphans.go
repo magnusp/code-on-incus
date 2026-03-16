@@ -19,6 +19,7 @@ type OrphanedResources struct {
 	FirewallRules         []string // Orphaned firewall rules (for non-existent container IPs)
 	FirewalldZoneBindings []string // Orphaned firewalld zone bindings (veths in zones but not on system)
 	NFTMonitorRules       []string // Orphaned nft monitoring rules (NFT_COI/NFT_DNS/NFT_SUSPICIOUS)
+	IptablesBridgeRules   []string // Orphaned iptables coi-bridge-forward rules (no coi containers running)
 }
 
 // DetectOrphanedVeths finds veth interfaces that have no master bridge
@@ -279,6 +280,66 @@ func CleanupOrphanedNFTMonitorRules(handles []string, logger func(string)) (int,
 	return cleaned, nil
 }
 
+// DetectOrphanedIptablesBridgeRules finds coi-bridge-forward iptables rules
+// that are left over when no coi containers are running
+func DetectOrphanedIptablesBridgeRules() ([]string, error) {
+	if !network.IptablesAvailable() {
+		return nil, nil
+	}
+
+	// Check if any coi containers are running; if yes, rules are not orphaned
+	containerIPs, err := getRunningContainerIPs()
+	if err != nil {
+		return nil, fmt.Errorf("failed to get container IPs: %w", err)
+	}
+	if len(containerIPs) > 0 {
+		return nil, nil
+	}
+
+	// List FORWARD chain rules and look for our comment tag
+	cmd := exec.Command("sudo", "-n", "iptables", "-S", "FORWARD")
+	output, err := cmd.Output()
+	if err != nil {
+		return nil, nil // iptables might not be accessible
+	}
+
+	var orphaned []string
+	scanner := bufio.NewScanner(strings.NewReader(string(output)))
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if strings.Contains(line, "coi-bridge-forward") {
+			orphaned = append(orphaned, line)
+		}
+	}
+
+	return orphaned, nil
+}
+
+// CleanupOrphanedIptablesBridgeRules removes orphaned coi-bridge-forward iptables rules
+func CleanupOrphanedIptablesBridgeRules(rules []string, logger func(string)) (int, error) {
+	if logger == nil {
+		logger = func(msg string) { log.Println(msg) }
+	}
+
+	if len(rules) == 0 {
+		return 0, nil
+	}
+
+	bridgeName, err := network.GetIncusBridgeName()
+	if err != nil {
+		logger(fmt.Sprintf("Warning: could not get bridge name for iptables cleanup: %v", err))
+		return 0, err
+	}
+
+	logger(fmt.Sprintf("Removing orphaned iptables bridge rules for %s", bridgeName))
+	if err := network.RemoveIptablesBridgeRules(bridgeName); err != nil {
+		logger(fmt.Sprintf("  Warning: Failed to remove iptables bridge rules: %v", err))
+		return 0, err
+	}
+
+	return len(rules), nil
+}
+
 // DetectAll detects all orphaned resources
 func DetectAll() (*OrphanedResources, error) {
 	result := &OrphanedResources{}
@@ -310,18 +371,25 @@ func DetectAll() (*OrphanedResources, error) {
 	}
 	result.NFTMonitorRules = nftRules
 
+	iptablesBridgeRules, err := DetectOrphanedIptablesBridgeRules()
+	if err != nil {
+		// Non-fatal - iptables might not be available
+		log.Printf("Warning: Could not check iptables bridge rules: %v", err)
+	}
+	result.IptablesBridgeRules = iptablesBridgeRules
+
 	return result, nil
 }
 
 // CleanupAll cleans up all orphaned resources
-func CleanupAll(logger func(string)) (vethsCleaned, rulesCleaned, zoneBindingsCleaned, nftRulesCleaned int, err error) {
+func CleanupAll(logger func(string)) (vethsCleaned, rulesCleaned, zoneBindingsCleaned, nftRulesCleaned, iptablesBridgeRulesCleaned int, err error) {
 	if logger == nil {
 		logger = func(msg string) { log.Println(msg) }
 	}
 
 	orphans, err := DetectAll()
 	if err != nil {
-		return 0, 0, 0, 0, err
+		return 0, 0, 0, 0, 0, err
 	}
 
 	if len(orphans.Veths) > 0 {
@@ -340,7 +408,11 @@ func CleanupAll(logger func(string)) (vethsCleaned, rulesCleaned, zoneBindingsCl
 		nftRulesCleaned, _ = CleanupOrphanedNFTMonitorRules(orphans.NFTMonitorRules, logger)
 	}
 
-	return vethsCleaned, rulesCleaned, zoneBindingsCleaned, nftRulesCleaned, nil
+	if len(orphans.IptablesBridgeRules) > 0 {
+		iptablesBridgeRulesCleaned, _ = CleanupOrphanedIptablesBridgeRules(orphans.IptablesBridgeRules, logger)
+	}
+
+	return vethsCleaned, rulesCleaned, zoneBindingsCleaned, nftRulesCleaned, iptablesBridgeRulesCleaned, nil
 }
 
 // HasOrphans returns true if there are any orphaned resources
@@ -349,7 +421,7 @@ func HasOrphans() bool {
 	if err != nil {
 		return false
 	}
-	return len(orphans.Veths) > 0 || len(orphans.FirewallRules) > 0 || len(orphans.FirewalldZoneBindings) > 0 || len(orphans.NFTMonitorRules) > 0
+	return len(orphans.Veths) > 0 || len(orphans.FirewallRules) > 0 || len(orphans.FirewalldZoneBindings) > 0 || len(orphans.NFTMonitorRules) > 0 || len(orphans.IptablesBridgeRules) > 0
 }
 
 // CleanupOrphanedFirewalldZoneBindings removes orphaned veth interfaces from firewalld zones

@@ -2,6 +2,7 @@ package network
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net"
@@ -34,6 +35,9 @@ type Manager struct {
 	cacheManager  *CacheManager
 	containerName string
 	containerIP   string
+
+	// iptables fallback (when firewalld unavailable but FORWARD DROP present)
+	iptablesBridgeName string
 
 	// Refresher lifecycle (for allowlist mode)
 	refreshCtx    context.Context
@@ -74,6 +78,18 @@ func (m *Manager) SetupForContainer(ctx context.Context, containerName string) e
 			m.firewall = NewFirewallManager(containerIP, "")
 			if err := EnsureOpenModeRules(containerIP); err != nil {
 				log.Printf("Warning: could not add open mode rules: %v", err)
+			}
+		} else if NeedsIptablesFallback() {
+			bridgeName, err := GetIncusBridgeName()
+			if err != nil {
+				log.Printf("Warning: could not get bridge name for iptables fallback: %v", err)
+			} else {
+				if err := EnsureIptablesBridgeRules(bridgeName); err != nil {
+					log.Printf("Warning: could not add iptables bridge rules: %v", err)
+				} else {
+					m.iptablesBridgeName = bridgeName
+					log.Printf("iptables fallback: added FORWARD ACCEPT rules for bridge %s (FORWARD policy is DROP, firewalld not available)", bridgeName)
+				}
 			}
 		} else {
 			log.Println("Warning: firewalld not available - container has unrestricted network access")
@@ -365,11 +381,44 @@ func (m *Manager) Teardown(ctx context.Context, containerName string) error {
 	// Stop background refresher if running (for allowlist mode)
 	m.stopRefresher()
 
+	// Clean up iptables bridge rules if we added them
+	if m.iptablesBridgeName != "" {
+		// Check if other coi containers are still running before removing
+		output, err := container.IncusOutput("list", "--format=json")
+		hasOtherContainers := false
+		if err == nil {
+			var containers []struct {
+				Name  string `json:"name"`
+				State struct {
+					Status string `json:"status"`
+				} `json:"state"`
+			}
+			if json.Unmarshal([]byte(output), &containers) == nil {
+				for _, c := range containers {
+					if c.Name != containerName && c.State.Status == "Running" {
+						hasOtherContainers = true
+						break
+					}
+				}
+			}
+		}
+
+		if !hasOtherContainers {
+			if err := RemoveIptablesBridgeRules(m.iptablesBridgeName); err != nil {
+				log.Printf("Warning: failed to remove iptables bridge rules: %v", err)
+			} else {
+				log.Printf("iptables fallback: removed FORWARD ACCEPT rules for bridge %s", m.iptablesBridgeName)
+			}
+		} else {
+			log.Printf("iptables fallback: skipping rule removal, other containers still running")
+		}
+	}
+
 	// For open mode, we also need to clean up firewall rules
 	// Open mode creates ACCEPT rules via EnsureOpenModeRules()
 	if m.config.Mode == config.NetworkModeOpen {
-		if !FirewallAvailable() {
-			return nil // No firewall, no rules to clean up
+		if !FirewallAvailable() && m.iptablesBridgeName == "" {
+			return nil // No firewall and no iptables fallback, no rules to clean up
 		}
 
 		// Use cached container IP if available (set during SetupForContainer)
@@ -412,33 +461,9 @@ func GetContainerGatewayIP(containerName string) (string, error) {
 
 // getContainerGatewayIP auto-detects the gateway IP for a container's network
 func getContainerGatewayIP(containerName string) (string, error) {
-	// Get container's network configuration from default profile
-	profileOutput, err := container.IncusOutput("profile", "device", "show", "default")
+	networkName, err := GetIncusBridgeName()
 	if err != nil {
-		return "", fmt.Errorf("failed to get default profile: %w", err)
-	}
-
-	// Parse network name from profile (eth0 device)
-	var networkName string
-	lines := strings.Split(profileOutput, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) == "eth0:" {
-			// Look for network: line
-			for j := i + 1; j < len(lines) && j < i+10; j++ {
-				if strings.Contains(lines[j], "network:") {
-					parts := strings.Split(lines[j], ":")
-					if len(parts) >= 2 {
-						networkName = strings.TrimSpace(parts[1])
-						break
-					}
-				}
-			}
-			break
-		}
-	}
-
-	if networkName == "" {
-		return "", fmt.Errorf("could not determine network name from profile")
+		return "", err
 	}
 
 	// Get network configuration

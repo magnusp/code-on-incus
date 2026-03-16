@@ -40,8 +40,9 @@ type BuildResult struct {
 
 // Builder handles Incus image building
 type Builder struct {
-	opts BuildOptions
-	mgr  *container.Manager
+	opts               BuildOptions
+	mgr                *container.Manager
+	iptablesBridgeName string
 }
 
 // NewBuilder creates a new Builder instance
@@ -147,6 +148,18 @@ func (b *Builder) launchBuildContainer() error {
 				b.opts.Logger(fmt.Sprintf("Firewall rules added for build container (%s)", containerIP))
 			}
 		}
+	} else if network.NeedsIptablesFallback() {
+		bridgeName, err := network.GetIncusBridgeName()
+		if err != nil {
+			b.opts.Logger(fmt.Sprintf("Warning: could not get bridge name for iptables fallback: %v", err))
+		} else {
+			if err := network.EnsureIptablesBridgeRules(bridgeName); err != nil {
+				b.opts.Logger(fmt.Sprintf("Warning: could not add iptables bridge rules: %v", err))
+			} else {
+				b.iptablesBridgeName = bridgeName
+				b.opts.Logger(fmt.Sprintf("iptables fallback: added FORWARD ACCEPT rules for bridge %s", bridgeName))
+			}
+		}
 	}
 
 	return nil
@@ -210,6 +223,16 @@ func (b *Builder) waitForNetwork() error {
 				Capture: true,
 			})
 			b.opts.Logger(fmt.Sprintf("DNS config: %s", dnsOutput))
+
+			// Check for Docker FORWARD DROP scenario
+			if network.NeedsIptablesFallback() {
+				bridgeName, err := network.GetIncusBridgeName()
+				if err == nil && !network.IptablesBridgeRulesExist(bridgeName) {
+					b.opts.Logger("Hint: Docker has set iptables FORWARD policy to DROP and firewalld is not available.")
+					b.opts.Logger("      iptables bridge rules are missing. This is likely causing the network timeout.")
+					b.opts.Logger(fmt.Sprintf("      Manual fix: sudo iptables -I FORWARD -i %s -j ACCEPT && sudo iptables -I FORWARD -o %s -j ACCEPT", bridgeName, bridgeName))
+				}
+			}
 		}
 
 		time.Sleep(1 * time.Second)
@@ -481,6 +504,15 @@ func (b *Builder) cleanup() {
 		_ = b.mgr.Stop(true) // Best effort cleanup
 	}
 	_ = b.mgr.Delete(true) // Best effort cleanup
+
+	// Clean up iptables bridge rules if we added them
+	if b.iptablesBridgeName != "" {
+		if err := network.RemoveIptablesBridgeRules(b.iptablesBridgeName); err != nil {
+			b.opts.Logger(fmt.Sprintf("Warning: could not remove iptables bridge rules: %v", err))
+		} else {
+			b.opts.Logger(fmt.Sprintf("iptables fallback: removed FORWARD ACCEPT rules for bridge %s", b.iptablesBridgeName))
+		}
+	}
 }
 
 // updateAlias updates the main alias to point to the new image

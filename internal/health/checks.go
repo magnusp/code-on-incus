@@ -297,40 +297,12 @@ func CheckImage(imageName string) HealthCheck {
 
 // CheckNetworkBridge verifies the network bridge is configured
 func CheckNetworkBridge() HealthCheck {
-	// Get default profile to find network device
-	output, err := container.IncusOutput("profile", "device", "show", "default")
+	networkName, err := network.GetIncusBridgeName()
 	if err != nil {
 		return HealthCheck{
 			Name:    "network_bridge",
-			Status:  StatusWarning,
-			Message: fmt.Sprintf("Could not get default profile: %v", err),
-		}
-	}
-
-	// Parse network name from profile (looking for eth0 device)
-	var networkName string
-	lines := strings.Split(output, "\n")
-	for i, line := range lines {
-		if strings.TrimSpace(line) == "eth0:" {
-			// Look for network: line
-			for j := i + 1; j < len(lines) && j < i+10; j++ {
-				if strings.Contains(lines[j], "network:") {
-					parts := strings.Split(lines[j], ":")
-					if len(parts) >= 2 {
-						networkName = strings.TrimSpace(parts[1])
-						break
-					}
-				}
-			}
-			break
-		}
-	}
-
-	if networkName == "" {
-		return HealthCheck{
-			Name:    "network_bridge",
 			Status:  StatusFailed,
-			Message: "No eth0 network device in default profile",
+			Message: fmt.Sprintf("Could not determine bridge name: %v", err),
 		}
 	}
 
@@ -807,18 +779,45 @@ func CheckContainerConnectivity(imageName string) HealthCheck {
 	}
 
 	// Apply firewall rules to allow container traffic
-	// (FORWARD chain policy may be DROP with firewalld)
-	if err := network.EnsureOpenModeRules(containerIP); err != nil {
-		return HealthCheck{
-			Name:    "container_connectivity",
-			Status:  StatusWarning,
-			Message: fmt.Sprintf("Failed to apply firewall rules: %v", err),
+	// (FORWARD chain policy may be DROP with firewalld or Docker)
+	var usedIptablesFallback bool
+	var iptablesBridgeName string
+
+	if network.FirewallAvailable() {
+		if err := network.EnsureOpenModeRules(containerIP); err != nil {
+			return HealthCheck{
+				Name:    "container_connectivity",
+				Status:  StatusWarning,
+				Message: fmt.Sprintf("Failed to apply firewall rules: %v", err),
+			}
 		}
+	} else if network.NeedsIptablesFallback() {
+		bridgeName, err := network.GetIncusBridgeName()
+		if err != nil {
+			return HealthCheck{
+				Name:    "container_connectivity",
+				Status:  StatusWarning,
+				Message: fmt.Sprintf("iptables fallback: could not get bridge name: %v", err),
+			}
+		}
+		if err := network.EnsureIptablesBridgeRules(bridgeName); err != nil {
+			return HealthCheck{
+				Name:    "container_connectivity",
+				Status:  StatusWarning,
+				Message: fmt.Sprintf("iptables fallback: failed to add bridge rules: %v", err),
+			}
+		}
+		usedIptablesFallback = true
+		iptablesBridgeName = bridgeName
 	}
 
 	// Clean up firewall rules on exit
 	defer func() {
-		_ = network.RemoveOpenModeRules(containerIP)
+		if usedIptablesFallback {
+			_ = network.RemoveIptablesBridgeRules(iptablesBridgeName)
+		} else if network.FirewallAvailable() {
+			_ = network.RemoveOpenModeRules(containerIP)
+		}
 	}()
 
 	// Give networking additional time to fully stabilize after DHCP
@@ -2034,6 +2033,66 @@ func CheckMonitoringConfiguration(cfg *config.Config) HealthCheck {
 		Name:    "monitoring_configuration",
 		Status:  StatusOK,
 		Message: "Monitoring is properly configured",
+		Details: details,
+	}
+}
+
+// CheckDockerForwardPolicy checks whether Docker has set the iptables FORWARD
+// chain policy to DROP and reports whether coi can handle it
+func CheckDockerForwardPolicy() HealthCheck {
+	dockerRunning := network.IsDockerRunning()
+	forwardDrop := network.ForwardPolicyIsDrop()
+	firewallAvailable := network.FirewallAvailable()
+	iptablesAvailable := network.IptablesAvailable()
+
+	details := map[string]interface{}{
+		"docker_running":      dockerRunning,
+		"forward_policy_drop": forwardDrop,
+		"firewalld_available": firewallAvailable,
+		"iptables_available":  iptablesAvailable,
+	}
+
+	if !dockerRunning {
+		return HealthCheck{
+			Name:    "docker_forward_policy",
+			Status:  StatusOK,
+			Message: "Docker not detected",
+			Details: details,
+		}
+	}
+
+	if !forwardDrop {
+		return HealthCheck{
+			Name:    "docker_forward_policy",
+			Status:  StatusOK,
+			Message: "Docker running, FORWARD policy is not DROP",
+			Details: details,
+		}
+	}
+
+	// FORWARD is DROP
+	if firewallAvailable {
+		return HealthCheck{
+			Name:    "docker_forward_policy",
+			Status:  StatusOK,
+			Message: "Docker FORWARD DROP detected, firewalld will handle it",
+			Details: details,
+		}
+	}
+
+	if iptablesAvailable {
+		return HealthCheck{
+			Name:    "docker_forward_policy",
+			Status:  StatusWarning,
+			Message: "Docker FORWARD DROP detected, no firewalld — coi will use iptables fallback automatically",
+			Details: details,
+		}
+	}
+
+	return HealthCheck{
+		Name:    "docker_forward_policy",
+		Status:  StatusFailed,
+		Message: "Docker FORWARD DROP detected, no firewalld or iptables — containers cannot reach internet",
 		Details: details,
 	}
 }
