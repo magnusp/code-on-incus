@@ -82,6 +82,11 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("incus is not available - please install Incus and ensure you're in the incus-admin group")
 	}
 
+	// Check minimum Incus version
+	if err := container.CheckMinimumVersion(); err != nil {
+		return err
+	}
+
 	// Get configured tool (needed to determine tool-specific sessions directory)
 	// --tool flag overrides whatever is in .coi.toml or global config
 	if toolFlag != "" {

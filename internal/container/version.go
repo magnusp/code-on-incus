@@ -82,6 +82,32 @@ func MeetsMinimumVersion(v *IncusVersion) bool {
 	return false
 }
 
+// CheckMinimumVersion checks the running Incus server version and returns an error
+// if it is below the minimum required version. Returns nil if the version is OK or
+// cannot be determined (graceful degradation).
+func CheckMinimumVersion() error {
+	output, err := IncusOutput("version")
+	if err != nil {
+		return nil // Can't get version, don't block
+	}
+
+	versionStr, err := ExtractServerVersion(output)
+	if err != nil {
+		return nil
+	}
+
+	v, err := ParseIncusVersion(versionStr)
+	if err != nil {
+		return nil
+	}
+
+	if !MeetsMinimumVersion(v) {
+		return fmt.Errorf("%s", FormatMinVersionError(v))
+	}
+
+	return nil
+}
+
 // FormatMinVersionError returns an actionable error message for users with old Incus versions
 func FormatMinVersionError(v *IncusVersion) string {
 	return fmt.Sprintf(

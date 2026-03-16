@@ -29,9 +29,9 @@ func TestCheckIncus_VersionCheck(t *testing.T) {
 		t.Errorf("Expected check name 'incus', got '%s'", result.Name)
 	}
 
-	// Should be OK or Failed (version too old)
-	if result.Status != StatusOK && result.Status != StatusFailed {
-		t.Errorf("Expected StatusOK or StatusFailed, got %s: %s", result.Status, result.Message)
+	// Should be OK or Warning (version too old)
+	if result.Status != StatusOK && result.Status != StatusWarning {
+		t.Errorf("Expected StatusOK or StatusWarning, got %s: %s", result.Status, result.Message)
 	}
 
 	// Details should contain a version
@@ -58,18 +58,18 @@ func TestCheckIncus_VersionCheck(t *testing.T) {
 			t.Errorf("Message should contain version %q, got %q", versionStr, result.Message)
 		}
 	} else {
-		if result.Status != StatusFailed {
+		if result.Status != StatusWarning {
 			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
 		}
 		if !strings.Contains(result.Message, "zabbly") {
-			t.Errorf("Failed message should mention zabbly, got %q", result.Message)
+			t.Errorf("Warning message should mention zabbly, got %q", result.Message)
 		}
 	}
 
 	t.Logf("CheckIncus: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
 }
 
-// evaluateIncusVersion should return StatusFailed with zabbly upgrade instructions for old versions
+// evaluateIncusVersion should return StatusWarning with zabbly upgrade instructions for old versions
 // (6.0.x, 5.x), StatusOK for versions meeting minimum (6.1+, 7.x), and degrade gracefully
 // (StatusOK) when the version output is unparseable or empty.
 func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
@@ -80,21 +80,21 @@ func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
 		expectContains string
 	}{
 		{
-			"Ubuntu 6.0.x fails",
+			"Ubuntu 6.0.x warns",
 			"Client version: 6.0.3\nServer version: 6.0.3",
-			StatusFailed,
+			StatusWarning,
 			"zabbly",
 		},
 		{
-			"6.0.0 fails",
+			"6.0.0 warns",
 			"Client version: 6.0.0\nServer version: 6.0.0",
-			StatusFailed,
+			StatusWarning,
 			"6.1",
 		},
 		{
-			"5.x fails",
+			"5.x warns",
 			"Server version: 5.21",
-			StatusFailed,
+			StatusWarning,
 			"zabbly",
 		},
 		{
@@ -118,7 +118,7 @@ func TestEvaluateIncusVersion_OldVersion(t *testing.T) {
 		{
 			"single line fallback",
 			"6.0.1",
-			StatusFailed,
+			StatusWarning,
 			"zabbly",
 		},
 		{
@@ -191,7 +191,7 @@ func TestCheckNFTables_VersionCheck(t *testing.T) {
 			t.Errorf("OK message should contain version %q, got %q", versionStr, result.Message)
 		}
 	} else {
-		if result.Status != StatusFailed {
+		if result.Status != StatusWarning {
 			t.Errorf("Version %s is below minimum but status is %s", versionStr, result.Status)
 		}
 	}
@@ -199,7 +199,7 @@ func TestCheckNFTables_VersionCheck(t *testing.T) {
 	t.Logf("CheckNFTables: status=%s version=%s message=%s", result.Status, versionStr, result.Message)
 }
 
-// evaluateNFTVersion should return a StatusFailed HealthCheck for old versions (0.8.x, 0.7.x),
+// evaluateNFTVersion should return a StatusWarning HealthCheck for old versions (0.8.x, 0.7.x),
 // nil for versions meeting minimum (0.9.0+, 1.x), and nil when the version output is
 // unparseable or empty (graceful degradation, version check is skipped).
 func TestEvaluateNFTVersion_OldVersion(t *testing.T) {
@@ -255,8 +255,8 @@ func TestEvaluateNFTVersion_OldVersion(t *testing.T) {
 				if result == nil {
 					t.Fatal("Expected a failed HealthCheck, got nil")
 				}
-				if result.Status != StatusFailed {
-					t.Errorf("Expected StatusFailed, got %s: %s", result.Status, result.Message)
+				if result.Status != StatusWarning {
+					t.Errorf("Expected StatusWarning, got %s: %s", result.Status, result.Message)
 				}
 				if !strings.Contains(result.Message, tt.expectContains) {
 					t.Errorf("Expected message to contain %q, got %q", tt.expectContains, result.Message)
