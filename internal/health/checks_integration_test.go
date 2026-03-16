@@ -435,6 +435,82 @@ func TestCheckContainerConnectivity_Cleanup(t *testing.T) {
 	}
 }
 
+// CheckFirewall should return a details map containing installed, running, and masquerade
+// booleans, and the status should reflect the actual firewall state.
+func TestCheckFirewall_DetailedStatus(t *testing.T) {
+	installed := network.FirewallInstalled()
+	running := network.FirewallAvailable()
+	masquerade := running && network.MasqueradeEnabled()
+
+	modes := []config.NetworkMode{
+		config.NetworkModeOpen,
+		config.NetworkModeRestricted,
+	}
+
+	for _, mode := range modes {
+		t.Run(string(mode), func(t *testing.T) {
+			result := CheckFirewall(mode)
+
+			if result.Name != "firewall" {
+				t.Errorf("Expected check name 'firewall', got %q", result.Name)
+			}
+
+			// Verify details map has the expected keys
+			if result.Details == nil {
+				t.Fatal("Expected non-nil Details map")
+			}
+
+			for _, key := range []string{"installed", "running", "masquerade"} {
+				val, ok := result.Details[key]
+				if !ok {
+					t.Errorf("Expected %q key in details", key)
+					continue
+				}
+				if _, isBool := val.(bool); !isBool {
+					t.Errorf("Expected %q to be bool, got %T", key, val)
+				}
+			}
+
+			// Verify detail values match actual system state
+			if result.Details["installed"] != installed {
+				t.Errorf("details[installed] = %v, want %v", result.Details["installed"], installed)
+			}
+			if result.Details["running"] != running {
+				t.Errorf("details[running] = %v, want %v", result.Details["running"], running)
+			}
+			if result.Details["masquerade"] != masquerade {
+				t.Errorf("details[masquerade] = %v, want %v", result.Details["masquerade"], masquerade)
+			}
+
+			// Verify status logic
+			if mode == config.NetworkModeOpen {
+				if result.Status != StatusOK {
+					t.Errorf("Open mode should always be StatusOK, got %s: %s", result.Status, result.Message)
+				}
+			} else {
+				// restricted/allowlist mode
+				switch {
+				case !installed || !running:
+					if result.Status != StatusFailed {
+						t.Errorf("Expected StatusFailed when firewall not available, got %s: %s", result.Status, result.Message)
+					}
+				case !masquerade:
+					if result.Status != StatusWarning {
+						t.Errorf("Expected StatusWarning when masquerade disabled, got %s: %s", result.Status, result.Message)
+					}
+				default:
+					if result.Status != StatusOK {
+						t.Errorf("Expected StatusOK when fully configured, got %s: %s", result.Status, result.Message)
+					}
+				}
+			}
+
+			t.Logf("CheckFirewall(%s): status=%s installed=%v running=%v masquerade=%v message=%s",
+				mode, result.Status, installed, running, masquerade, result.Message)
+		})
+	}
+}
+
 // CheckNetworkRestriction should return StatusWarning with "firewalld not available" when
 // firewalld is not installed or not running, rather than attempting the restriction check.
 func TestCheckNetworkRestriction_NoFirewall(t *testing.T) {

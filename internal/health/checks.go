@@ -412,45 +412,80 @@ func CheckIPForwarding() HealthCheck {
 
 // CheckFirewall verifies firewalld availability based on network mode
 func CheckFirewall(mode config.NetworkMode) HealthCheck {
-	available := network.FirewallAvailable()
+	installed := network.FirewallInstalled()
+	running := network.FirewallAvailable()
+	masquerade := running && network.MasqueradeEnabled()
 	isColima := isColimaEnvironment()
 
+	details := map[string]interface{}{
+		"installed":  installed,
+		"running":    running,
+		"masquerade": masquerade,
+		"colima":     isColima,
+	}
+
 	if mode == config.NetworkModeOpen {
-		// Firewall not required for open mode
-		if available {
-			return HealthCheck{
-				Name:    "firewall",
-				Status:  StatusOK,
-				Message: "Available (not required for open mode)",
-			}
+		// Firewall not required for open mode — always OK, but report actual state
+		var message string
+		switch {
+		case running && masquerade:
+			message = "Running with masquerade enabled (not required for open mode)"
+		case running:
+			message = "Running but masquerade not enabled (not required for open mode)"
+		case installed:
+			message = "Installed but not running (not required for open mode)"
+		default:
+			message = "Not installed (not required for open mode)"
 		}
 		return HealthCheck{
 			Name:    "firewall",
 			Status:  StatusOK,
-			Message: "Not available (not required for open mode)",
+			Message: message,
+			Details: details,
 		}
 	}
 
 	// Required for restricted/allowlist modes
-	if !available {
-		message := fmt.Sprintf("Not available (required for %s mode)", mode)
+	if !installed {
+		message := fmt.Sprintf("Not installed (required for %s mode) — install with: sudo apt install firewalld", mode)
 		if isColima {
-			message = "Not available - use --network=open for Colima"
+			message = "Not installed - use --network=open for Colima"
 		}
 		return HealthCheck{
 			Name:    "firewall",
 			Status:  StatusFailed,
 			Message: message,
-			Details: map[string]interface{}{
-				"colima": isColima,
-			},
+			Details: details,
+		}
+	}
+
+	if !running {
+		message := fmt.Sprintf("Installed but not running (required for %s mode) — start with: sudo systemctl enable --now firewalld", mode)
+		if isColima {
+			message = "Installed but not running - use --network=open for Colima"
+		}
+		return HealthCheck{
+			Name:    "firewall",
+			Status:  StatusFailed,
+			Message: message,
+			Details: details,
+		}
+	}
+
+	if !masquerade {
+		return HealthCheck{
+			Name:    "firewall",
+			Status:  StatusWarning,
+			Message: "Running but masquerade not enabled — containers may not reach the internet. Enable with: sudo firewall-cmd --permanent --add-masquerade && sudo firewall-cmd --reload",
+			Details: details,
 		}
 	}
 
 	return HealthCheck{
 		Name:    "firewall",
 		Status:  StatusOK,
-		Message: fmt.Sprintf("Running (%s mode available)", mode),
+		Message: fmt.Sprintf("Running with masquerade enabled (%s mode available)", mode),
+		Details: details,
 	}
 }
 

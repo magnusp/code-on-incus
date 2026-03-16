@@ -367,11 +367,23 @@ func getContainerIPOnce(containerName string) (string, error) {
 	return "", fmt.Errorf("no IPv4 address found for container %s", containerName)
 }
 
+// FirewallInstalled checks if the firewall-cmd binary is installed
+func FirewallInstalled() bool {
+	_, err := exec.LookPath("firewall-cmd")
+	return err == nil
+}
+
 // FirewallAvailable checks if firewalld is available and running
 func FirewallAvailable() bool {
 	cmd := exec.Command("sudo", "-n", "firewall-cmd", "--state")
 	err := cmd.Run()
 	return err == nil
+}
+
+// MasqueradeEnabled checks if masquerade is enabled in the default firewalld zone
+func MasqueradeEnabled() bool {
+	cmd := exec.Command("sudo", "-n", "firewall-cmd", "--query-masquerade")
+	return cmd.Run() == nil
 }
 
 // GetContainerVethName retrieves the host-side veth interface name for a container
