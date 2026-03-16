@@ -159,7 +159,7 @@ func evaluateIncusVersion(versionOutput string) HealthCheck {
 	if !container.MeetsMinimumVersion(v) {
 		return HealthCheck{
 			Name:    "incus",
-			Status:  StatusFailed,
+			Status:  StatusWarning,
 			Message: container.FormatMinVersionError(v),
 			Details: map[string]interface{}{
 				"version": versionStr,
@@ -1602,7 +1602,7 @@ func evaluateNFTVersion(nftPath, versionOutput string) *HealthCheck {
 	if !nftmonitor.MeetsMinimumNFTVersion(v) {
 		return &HealthCheck{
 			Name:    "nftables",
-			Status:  StatusFailed,
+			Status:  StatusWarning,
 			Message: nftmonitor.FormatMinNFTVersionError(v),
 			Details: map[string]interface{}{
 				"nft_path": nftPath,

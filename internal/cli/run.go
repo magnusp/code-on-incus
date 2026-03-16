@@ -54,6 +54,11 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("incus is not available - please install Incus and ensure you're in the incus-admin group")
 	}
 
+	// Check minimum Incus version
+	if err := container.CheckMinimumVersion(); err != nil {
+		return err
+	}
+
 	// Allocate slot if not specified
 	slotNum := slot
 	if slotNum == 0 {
