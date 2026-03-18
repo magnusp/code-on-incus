@@ -14,8 +14,8 @@ BINARY_NAME="coi"
 INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-latest}"
 
-# Detect non-interactive mode (piped input, CI, or explicit opt-in)
-if [ "${NONINTERACTIVE:-0}" = "1" ] || [ "${CI:-}" = "true" ] || ! [ -e /dev/tty ]; then
+# Detect non-interactive mode (CI, explicit opt-in, or no usable controlling terminal)
+if [ "${NONINTERACTIVE:-0}" = "1" ] || [ "${CI:-}" = "true" ] || ! { true </dev/tty; } 2>/dev/null; then
     NONINTERACTIVE=1
 else
     NONINTERACTIVE=0
