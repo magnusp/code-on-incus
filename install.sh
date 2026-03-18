@@ -15,7 +15,7 @@ INSTALL_DIR="${INSTALL_DIR:-/usr/local/bin}"
 VERSION="${VERSION:-latest}"
 
 # Detect non-interactive mode (piped input, CI, or explicit opt-in)
-if [ "${NONINTERACTIVE:-0}" = "1" ] || [ "${CI:-}" = "true" ] || ! [ -t 0 ]; then
+if [ "${NONINTERACTIVE:-0}" = "1" ] || [ "${CI:-}" = "true" ] || ! [ -e /dev/tty ]; then
     NONINTERACTIVE=1
 else
     NONINTERACTIVE=0
