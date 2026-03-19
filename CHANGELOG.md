@@ -18,6 +18,7 @@
 - [Feature] **Improved firewalld setup UX with masquerade checks and auto-setup** — `coi health` now reports granular firewall state (installed/running/masquerade) with actionable fix commands. `install.sh` offers interactive auto-setup for firewalld (install, start, enable masquerade, configure passwordless sudo). (#216)
 - [Fix] **install.sh works with curl|bash pipe** — Fixed `read` consuming script content from stdin instead of user input when piped. Added `/dev/tty` helpers and non-interactive mode auto-detection. (#215)
 - [Fix] **Post-install firewalld hint updated for auto-setup flow** — Updated `post_install()` hint to mention masquerade and align with the new interactive setup from #216. (#217)
+- [Fix] **install.sh interactive detection fixed for curl|bash** — `curl -fsSL ... | bash` incorrectly entered non-interactive mode because `[ -t 0 ]` is always false when stdin is a pipe. Replaced with a `/dev/tty` open check (`true </dev/tty`) which correctly detects whether a controlling terminal is available, since all `read` calls already redirect from `/dev/tty`. Thanks @dgrant! (#222)
 
 ## 0.7.0 (2026-03-10)
 
