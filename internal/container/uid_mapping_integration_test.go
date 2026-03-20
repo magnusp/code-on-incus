@@ -119,7 +119,7 @@ func TestWorkspaceWriteAccess_ShiftTrue(t *testing.T) {
 
 	// Create a temp dir with a host-owned file to mount as workspace
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/host-file.txt", []byte("written-by-host"), 0644); err != nil {
+	if err := os.WriteFile(tmpDir+"/host-file.txt", []byte("written-by-host"), 0o644); err != nil {
 		t.Fatalf("Failed to create host file: %v", err)
 	}
 
@@ -178,7 +178,7 @@ func TestWorkspaceWriteAccess_RawIdmap(t *testing.T) {
 
 	// Create a temp dir with a host-owned file to mount as workspace
 	tmpDir := t.TempDir()
-	if err := os.WriteFile(tmpDir+"/host-file.txt", []byte("written-by-host"), 0644); err != nil {
+	if err := os.WriteFile(tmpDir+"/host-file.txt", []byte("written-by-host"), 0o644); err != nil {
 		t.Fatalf("Failed to create host file: %v", err)
 	}
 
