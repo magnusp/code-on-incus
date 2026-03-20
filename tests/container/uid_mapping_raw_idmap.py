@@ -32,11 +32,15 @@ from support.helpers import (
 )
 
 
-def _incus(*args):
-    """Run an incus command via sg wrapper. Returns CompletedProcess."""
-    cmd = "incus " + " ".join(args)
+def _incus_run(*args):
+    """
+    Run an incus command directly (no sg wrapper).
+
+    Uses subprocess list args to avoid shell quoting issues.
+    Works on CI (socket is chmod 666) and local dev (user in incus-admin group).
+    """
     return subprocess.run(
-        ["sg", "incus-admin", "-c", cmd],
+        ["incus", *args],
         capture_output=True,
         text=True,
         timeout=60,
@@ -74,37 +78,35 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
 
         # === Phase 2: Create container without starting ===
 
-        result = _incus("init", "coi", container_name)
+        result = _incus_run("init", "coi", container_name)
         assert result.returncode == 0, f"incus init should succeed. stderr: {result.stderr}"
 
         # === Phase 3: Configure security flags (same as EnableDockerSupport) ===
 
         for config in [
-            "security.nesting=true",
-            "security.syscalls.intercept.mknod=true",
-            "security.syscalls.intercept.setxattr=true",
-            "linux.sysctl.net.ipv4.ip_unprivileged_port_start=0",
+            ("security.nesting", "true"),
+            ("security.syscalls.intercept.mknod", "true"),
+            ("security.syscalls.intercept.setxattr", "true"),
+            ("linux.sysctl.net.ipv4.ip_unprivileged_port_start", "0"),
         ]:
-            result = _incus("config", "set", container_name, config)
+            result = _incus_run("config", "set", container_name, f"{config[0]}={config[1]}")
             assert result.returncode == 0, (
-                f"Setting {config} should succeed. stderr: {result.stderr}"
+                f"Setting {config[0]} should succeed. stderr: {result.stderr}"
             )
 
         # === Phase 4: Set raw.idmap (must be before first boot) ===
+        # Uses key/value as separate args to avoid any shell quoting issues
 
         idmap_value = f"both {host_uid} 1000"
-        result = subprocess.run(
-            [
-                "sg",
-                "incus-admin",
-                "-c",
-                f"incus config set {container_name} raw.idmap '{idmap_value}'",
-            ],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+        result = _incus_run("config", "set", container_name, "raw.idmap", idmap_value)
         assert result.returncode == 0, f"Setting raw.idmap should succeed. stderr: {result.stderr}"
+
+        # Verify raw.idmap was set correctly
+        result = _incus_run("config", "get", container_name, "raw.idmap")
+        assert result.returncode == 0, f"Getting raw.idmap should succeed. stderr: {result.stderr}"
+        assert idmap_value in result.stdout, (
+            f"raw.idmap should be '{idmap_value}', got: '{result.stdout.strip()}'"
+        )
 
         # === Phase 5: Mount workspace WITHOUT shift ===
 
