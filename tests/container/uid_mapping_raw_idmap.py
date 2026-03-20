@@ -8,13 +8,18 @@ This is the fix for the shift=true bug: raw.idmap explicitly maps
 "both <hostUID> 1000", so the container's code user always sees host files
 as its own.
 
+Uses incus init (not launch) to create the container without starting it,
+sets raw.idmap and security config before first boot — matching the
+production code path in session/setup.go.
+
 Tests that:
 1. Create container without starting (incus init)
-2. Set raw.idmap to map host UID -> container UID 1000
-3. Mount workspace WITHOUT shift
-4. Start container
-5. As code user (UID 1000), read, create, and overwrite files
-6. All operations succeed regardless of host UID
+2. Enable Docker/nesting support (security flags)
+3. Set raw.idmap to map host UID -> container UID 1000
+4. Mount workspace WITHOUT shift
+5. Start container
+6. As code user (UID 1000), read, create, and overwrite files
+7. All operations succeed regardless of host UID
 """
 
 import os
@@ -27,6 +32,17 @@ from support.helpers import (
 )
 
 
+def _incus(*args):
+    """Run an incus command via sg wrapper. Returns CompletedProcess."""
+    cmd = "incus " + " ".join(args)
+    return subprocess.run(
+        ["sg", "incus-admin", "-c", cmd],
+        capture_output=True,
+        text=True,
+        timeout=60,
+    )
+
+
 def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, workspace_dir):
     """
     Test that raw.idmap workspace mounts allow the code user to read/write files.
@@ -34,13 +50,17 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
     Unlike shift=true, raw.idmap explicitly maps the host UID to container
     UID 1000, which works regardless of the host user's UID.
 
+    This test mirrors the production code path: init → configure → mount → start
+    (raw.idmap must be set before the container's first boot).
+
     Flow:
-    1. Launch a container (gets Docker/nesting support via coi launch)
-    2. Set raw.idmap via incus to map host UID -> 1000
-    3. Mount a temp directory WITHOUT shift at /workspace
-    4. Exec as code user (UID 1000) to read, create, and overwrite files
-    5. Assert all operations succeed
-    6. Cleanup
+    1. incus init (create container without starting)
+    2. Set security flags and raw.idmap
+    3. Mount workspace WITHOUT shift
+    4. Start container
+    5. Exec as code user (UID 1000) to read, create, and overwrite files
+    6. Assert all operations succeed
+    7. Cleanup
     """
     container_name = calculate_container_name(workspace_dir, 1)
     host_uid = os.getuid()
@@ -52,32 +72,25 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
         with open(test_file, "w") as f:
             f.write("written-by-host")
 
-        # === Phase 2: Launch container ===
+        # === Phase 2: Create container without starting ===
 
-        result = subprocess.run(
-            [coi_binary, "container", "launch", "coi", container_name],
-            capture_output=True,
-            text=True,
-            timeout=120,
-        )
+        result = _incus("init", "coi", container_name)
+        assert result.returncode == 0, f"incus init should succeed. stderr: {result.stderr}"
 
-        assert result.returncode == 0, f"Container launch should succeed. stderr: {result.stderr}"
+        # === Phase 3: Configure security flags (same as EnableDockerSupport) ===
 
-        time.sleep(3)
+        for config in [
+            "security.nesting=true",
+            "security.syscalls.intercept.mknod=true",
+            "security.syscalls.intercept.setxattr=true",
+            "linux.sysctl.net.ipv4.ip_unprivileged_port_start=0",
+        ]:
+            result = _incus("config", "set", container_name, config)
+            assert result.returncode == 0, (
+                f"Setting {config} should succeed. stderr: {result.stderr}"
+            )
 
-        # === Phase 3: Stop container to apply raw.idmap ===
-        # raw.idmap requires a container restart to take effect
-
-        result = subprocess.run(
-            [coi_binary, "container", "stop", container_name, "--force"],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
-
-        assert result.returncode == 0, f"Container stop should succeed. stderr: {result.stderr}"
-
-        # === Phase 4: Set raw.idmap and mount workspace ===
+        # === Phase 4: Set raw.idmap (must be before first boot) ===
 
         idmap_value = f"both {host_uid} 1000"
         result = subprocess.run(
@@ -91,10 +104,10 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             text=True,
             timeout=30,
         )
-
         assert result.returncode == 0, f"Setting raw.idmap should succeed. stderr: {result.stderr}"
 
-        # Mount workspace WITHOUT shift (raw.idmap handles UID mapping)
+        # === Phase 5: Mount workspace WITHOUT shift ===
+
         result = subprocess.run(
             [
                 coi_binary,
@@ -109,10 +122,9 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             text=True,
             timeout=60,
         )
-
         assert result.returncode == 0, f"Mount should succeed. stderr: {result.stderr}"
 
-        # === Phase 5: Start container with new config ===
+        # === Phase 6: Start container ===
 
         result = subprocess.run(
             [coi_binary, "container", "start", container_name],
@@ -120,14 +132,13 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             text=True,
             timeout=60,
         )
-
         assert result.returncode == 0, f"Container start should succeed. stderr: {result.stderr}"
 
         time.sleep(3)
 
-        # === Phase 6: Test read/write as code user (UID 1000) ===
+        # === Phase 7: Test read/write as code user (UID 1000) ===
 
-        # 6a. Read the host-created file
+        # 7a. Read the host-created file
         result = subprocess.run(
             [
                 coi_binary,
@@ -155,7 +166,7 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             f"Host file should contain expected content. Got: {result.stdout + result.stderr}"
         )
 
-        # 6b. Create a new file
+        # 7b. Create a new file
         result = subprocess.run(
             [
                 coi_binary,
@@ -181,7 +192,7 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             f"(host UID={host_uid} -> container UID=1000). stderr: {result.stderr}"
         )
 
-        # 6c. Overwrite the host-created file
+        # 7c. Overwrite the host-created file
         result = subprocess.run(
             [
                 coi_binary,
@@ -207,7 +218,7 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
             f"(host UID={host_uid} -> container UID=1000). stderr: {result.stderr}"
         )
 
-        # === Phase 7: Cleanup ===
+        # === Phase 8: Cleanup ===
 
         subprocess.run(
             [coi_binary, "container", "delete", container_name, "--force"],
