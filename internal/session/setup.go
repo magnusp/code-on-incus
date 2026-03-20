@@ -275,8 +275,8 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		}
 
 		// Configure UID/GID mapping for bind mounts based on environment
-		// Local: Use shift=true (kernel idmap support)
-		// CI: Use raw.idmap (kernel lacks idmap support, runner UID 1001 → container UID 1000)
+		// When host UID matches container code user UID: Use shift=true (simple, works everywhere)
+		// When host UID differs: Use raw.idmap to explicitly map host UID → container code UID
 		// Colima/Lima: Disable shift (VM already handles UID mapping via virtiofs)
 
 		// Auto-detect Colima/Lima environment if not explicitly configured
@@ -287,11 +287,15 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		}
 
 		useShift := !disableShift
-		isCI := os.Getenv("CI") == "true" || os.Getenv("GITHUB_ACTIONS") == "true"
+		hostUID := os.Getuid()
 
-		if isCI {
-			opts.Logger("Configuring UID/GID mapping for CI environment...")
-			if err := container.IncusExec("config", "set", result.ContainerName, "raw.idmap", "both 1001 1000"); err != nil {
+		if !disableShift && hostUID != container.CodeUID {
+			// Host UID differs from container code user UID — shift=true won't work
+			// because it only translates root (UID 0), not arbitrary UIDs.
+			// Use raw.idmap to explicitly map host UID → container code UID.
+			idmapValue := fmt.Sprintf("both %d %d", hostUID, container.CodeUID)
+			opts.Logger(fmt.Sprintf("Host UID %d differs from container code UID %d, using raw.idmap: %s", hostUID, container.CodeUID, idmapValue))
+			if err := container.IncusExec("config", "set", result.ContainerName, "raw.idmap", idmapValue); err != nil {
 				opts.Logger(fmt.Sprintf("Warning: Failed to set raw.idmap: %v", err))
 			}
 			useShift = false // Don't use shift=true with raw.idmap
