@@ -37,10 +37,11 @@ def _incus_run(*args):
     Run an incus command directly (no sg wrapper).
 
     Uses subprocess list args to avoid shell quoting issues.
+    Includes --project default to match the coi binary's behavior.
     Works on CI (socket is chmod 666) and local dev (user in incus-admin group).
     """
     return subprocess.run(
-        ["incus", *args],
+        ["incus", "--project", "default", *args],
         capture_output=True,
         text=True,
         timeout=60,
