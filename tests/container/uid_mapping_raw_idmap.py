@@ -120,6 +120,7 @@ def test_workspace_write_access_raw_idmap(coi_binary, cleanup_containers, worksp
                 "workspace",
                 tmpdir,
                 "/workspace",
+                "--shift=false",
             ],
             capture_output=True,
             text=True,
