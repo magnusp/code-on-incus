@@ -150,10 +150,19 @@ WRAPPER_EOF
 install_claude_cli() {
     log "Installing Claude CLI (native)..."
 
+    # Prefer IPv4 to work around broken IPv6 in containers and some networks.
+    # The native installer (Bun/Node) resolves AAAA records first; when the
+    # IPv6 path is non-functional the download either times out or returns 403.
+    # See: https://github.com/anthropics/claude-code/issues/13498
+    if ! grep -q '::ffff:0:0/96' /etc/gai.conf 2>/dev/null; then
+        echo 'precedence ::ffff:0:0/96 100' >> /etc/gai.conf
+        log "IPv4 preference set in /etc/gai.conf"
+    fi
+
     # Run the native installer as the code user (with retries for transient network failures)
     local attempt
     for attempt in 1 2 3; do
-        if su - "$CODE_USER" -c 'curl -fsSL https://claude.ai/install.sh | bash'; then
+        if su - "$CODE_USER" -c 'curl -4 -fsSL https://claude.ai/install.sh | bash'; then
             break
         fi
         if [ "$attempt" -eq 3 ]; then
