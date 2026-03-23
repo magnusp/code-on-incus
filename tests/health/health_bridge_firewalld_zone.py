@@ -86,17 +86,13 @@ def test_health_bridge_firewalld_zone_check_exists(coi_binary):
     data = json.loads(result.stdout)
     checks = data["checks"]
 
-    assert "bridge_firewalld_zone" in checks, (
-        "Should have bridge_firewalld_zone check"
-    )
+    assert "bridge_firewalld_zone" in checks, "Should have bridge_firewalld_zone check"
 
     check = checks["bridge_firewalld_zone"]
     assert "name" in check, "Check should have 'name' field"
     assert "status" in check, "Check should have 'status' field"
     assert "message" in check, "Check should have 'message' field"
-    assert check["status"] in ["ok", "warning", "failed"], (
-        f"Invalid status: {check['status']}"
-    )
+    assert check["status"] in ["ok", "warning", "failed"], f"Invalid status: {check['status']}"
 
 
 def test_health_bridge_firewalld_zone_ok_when_configured(coi_binary):
@@ -115,9 +111,7 @@ def test_health_bridge_firewalld_zone_ok_when_configured(coi_binary):
 
     bridge_name = get_bridge_name()
     if not bridge_in_trusted_zone(bridge_name):
-        pytest.skip(
-            f"Bridge {bridge_name} not in trusted zone (test requires it to be)"
-        )
+        pytest.skip(f"Bridge {bridge_name} not in trusted zone (test requires it to be)")
 
     result = subprocess.run(
         [coi_binary, "health", "--format", "json"],
@@ -139,9 +133,7 @@ def test_health_bridge_firewalld_zone_ok_when_configured(coi_binary):
     assert check["details"]["bridge_name"] == bridge_name, (
         f"Details should show bridge name {bridge_name}"
     )
-    assert check["details"]["in_trusted_zone"] is True, (
-        "Details should show in_trusted_zone=true"
-    )
+    assert check["details"]["in_trusted_zone"] is True, "Details should show in_trusted_zone=true"
 
 
 def test_health_bridge_firewalld_zone_warns_when_not_configured(coi_binary):
@@ -252,9 +244,9 @@ def test_health_bridge_firewalld_zone_ok_without_firewalld(coi_binary):
     assert check["status"] == "ok", (
         f"Expected OK when firewalld not running, got: {check['status']}"
     )
-    assert "not running" in check["message"].lower() or "not applicable" in check["message"].lower(), (
-        f"Message should indicate check is not applicable: {check['message']}"
-    )
+    assert (
+        "not running" in check["message"].lower() or "not applicable" in check["message"].lower()
+    ), f"Message should indicate check is not applicable: {check['message']}"
 
 
 def test_health_bridge_firewalld_zone_text_output(coi_binary):
