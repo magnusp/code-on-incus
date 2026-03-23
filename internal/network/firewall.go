@@ -387,8 +387,10 @@ func MasqueradeEnabled() bool {
 }
 
 // BridgeInTrustedZone checks if the Incus bridge interface is in the firewalld trusted zone.
-// Returns (inZone, bridgeName, error). When firewalld is not running or the bridge name
-// cannot be determined, an error is returned.
+// Returns (inZone, bridgeName, error). An error is returned when the bridge name cannot be
+// determined or when firewall-cmd fails unexpectedly (not just "interface not in zone").
+// firewall-cmd --query-interface exits 0 when in zone, 1 when not in zone, and other
+// codes for real errors.
 func BridgeInTrustedZone() (bool, string, error) {
 	bridgeName, err := GetIncusBridgeName()
 	if err != nil {
@@ -396,8 +398,15 @@ func BridgeInTrustedZone() (bool, string, error) {
 	}
 
 	cmd := exec.Command("sudo", "-n", "firewall-cmd", "--zone=trusted", "--query-interface="+bridgeName)
-	err = cmd.Run()
-	return err == nil, bridgeName, nil
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		// Exit code 1 means "not in zone" — that's a valid answer, not an error
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return false, bridgeName, nil
+		}
+		return false, bridgeName, fmt.Errorf("firewall-cmd query failed: %w: %s", err, strings.TrimSpace(string(output)))
+	}
+	return true, bridgeName, nil
 }
 
 // IptablesAvailable checks if the iptables binary is installed

@@ -281,6 +281,7 @@ check_firewalld() {
 
         if [ "$NONINTERACTIVE" = "1" ]; then
             echo -e "${BLUE}→ Non-interactive mode: skipping masquerade setup (optional)${NC}"
+            ensure_bridge_trusted_zone
             return
         fi
 
