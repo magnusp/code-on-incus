@@ -9,7 +9,6 @@ Tests that:
 
 import json
 import subprocess
-import time
 
 
 def firewalld_available():
