@@ -90,7 +90,7 @@ func outputHealthText(result *health.HealthResult) error {
 	categories := map[string][]string{
 		"SYSTEM":        {"os"},
 		"CRITICAL":      {"incus", "permissions", "image", "image_age"},
-		"NETWORKING":    {"network_bridge", "ip_forwarding", "firewall", "docker_forward_policy"},
+		"NETWORKING":    {"network_bridge", "ip_forwarding", "firewall", "bridge_firewalld_zone", "docker_forward_policy"},
 		"MONITORING":    {"nftables", "systemd_journal", "libsystemd"},
 		"STORAGE":       {"coi_directory", "sessions_directory", "disk_space", "incus_storage_pool"},
 		"CONFIGURATION": {"config", "network_mode", "tool"},
@@ -211,6 +211,7 @@ func formatCheckName(name string) string {
 		"network_bridge":        "Network bridge",
 		"ip_forwarding":         "IP forwarding",
 		"firewall":              "Firewalld",
+		"bridge_firewalld_zone": "Bridge FW zone",
 		"docker_forward_policy": "Docker FORWARD",
 		"nftables":              "nftables",
 		"systemd_journal":       "systemd journal",

@@ -461,6 +461,48 @@ func CheckFirewall(mode config.NetworkMode) HealthCheck {
 	}
 }
 
+// CheckBridgeFirewalldZone checks if the Incus bridge is in the firewalld trusted zone.
+// When the bridge is not in the trusted zone, containers may fail to obtain IP addresses.
+func CheckBridgeFirewalldZone() HealthCheck {
+	if !network.FirewallAvailable() {
+		return HealthCheck{
+			Name:    "bridge_firewalld_zone",
+			Status:  StatusOK,
+			Message: "Firewalld not running (check not applicable)",
+		}
+	}
+
+	inZone, bridgeName, err := network.BridgeInTrustedZone()
+	if err != nil {
+		return HealthCheck{
+			Name:    "bridge_firewalld_zone",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("Could not check bridge zone: %v", err),
+		}
+	}
+
+	details := map[string]interface{}{
+		"bridge_name":     bridgeName,
+		"in_trusted_zone": inZone,
+	}
+
+	if !inZone {
+		return HealthCheck{
+			Name:    "bridge_firewalld_zone",
+			Status:  StatusWarning,
+			Message: fmt.Sprintf("Bridge %s not in trusted zone — containers may fail to get IPs. Fix: sudo firewall-cmd --zone=trusted --add-interface=%s --permanent && sudo firewall-cmd --reload", bridgeName, bridgeName),
+			Details: details,
+		}
+	}
+
+	return HealthCheck{
+		Name:    "bridge_firewalld_zone",
+		Status:  StatusOK,
+		Message: fmt.Sprintf("Bridge %s is in trusted zone", bridgeName),
+		Details: details,
+	}
+}
+
 // CheckCOIDirectory verifies the COI directory exists and is writable
 func CheckCOIDirectory() HealthCheck {
 	homeDir, err := os.UserHomeDir()

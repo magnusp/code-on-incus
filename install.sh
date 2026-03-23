@@ -161,6 +161,48 @@ check_group() {
     fi
 }
 
+# Ensure the Incus bridge is in the firewalld trusted zone
+# Without this, containers may fail to get IP addresses
+ensure_bridge_trusted_zone() {
+    # Try to detect the Incus bridge name
+    local bridge_name=""
+    if command -v incus &> /dev/null; then
+        bridge_name=$(incus network list -f csv 2>/dev/null | grep ',bridge,' | head -1 | cut -d, -f1)
+    fi
+    # Fallback to incusbr0
+    if [ -z "$bridge_name" ]; then
+        bridge_name="incusbr0"
+    fi
+
+    # Check if bridge is already in trusted zone
+    if sudo -n firewall-cmd --zone=trusted --query-interface="$bridge_name" &> /dev/null; then
+        echo -e "${GREEN}✓ Bridge $bridge_name is in firewalld trusted zone${NC}"
+        return
+    fi
+
+    echo -e "${YELLOW}⚠ Bridge $bridge_name is not in firewalld trusted zone${NC}"
+    echo ""
+    echo "  Without this, containers may fail to get IP addresses."
+    echo ""
+
+    if [ "$NONINTERACTIVE" = "1" ]; then
+        echo -e "${BLUE}→ Non-interactive mode: adding bridge to trusted zone...${NC}"
+        sudo firewall-cmd --zone=trusted --add-interface="$bridge_name" --permanent
+        sudo firewall-cmd --reload
+        echo -e "${GREEN}✓ Bridge $bridge_name added to trusted zone${NC}"
+        return
+    fi
+
+    read -p "  Add $bridge_name to firewalld trusted zone now? [Y/n] " -n 1 -r </dev/tty
+    echo ""
+    if [[ ! $REPLY =~ ^[Nn]$ ]]; then
+        echo -e "${BLUE}→ Adding $bridge_name to trusted zone...${NC}"
+        sudo firewall-cmd --zone=trusted --add-interface="$bridge_name" --permanent
+        sudo firewall-cmd --reload
+        echo -e "${GREEN}✓ Bridge $bridge_name added to trusted zone${NC}"
+    fi
+}
+
 # Check firewalld for network isolation
 check_firewalld() {
     echo -e "${BLUE}→ Checking firewalld (for network isolation)...${NC}"
@@ -193,6 +235,7 @@ check_firewalld() {
             echo "$USER ALL=(ALL) NOPASSWD: $fwcmd_path" | sudo tee /etc/sudoers.d/coi-firewalld > /dev/null
             sudo chmod 0440 /etc/sudoers.d/coi-firewalld
             echo -e "${GREEN}✓ Firewalld installed and configured${NC}"
+            ensure_bridge_trusted_zone
         fi
         return
     fi
@@ -222,6 +265,7 @@ check_firewalld() {
                 sudo firewall-cmd --reload
                 echo -e "${GREEN}✓ Masquerade enabled${NC}"
             fi
+            ensure_bridge_trusted_zone
         fi
         return
     fi
@@ -237,6 +281,7 @@ check_firewalld() {
 
         if [ "$NONINTERACTIVE" = "1" ]; then
             echo -e "${BLUE}→ Non-interactive mode: skipping masquerade setup (optional)${NC}"
+            ensure_bridge_trusted_zone
             return
         fi
 
@@ -249,6 +294,9 @@ check_firewalld() {
             echo -e "${GREEN}✓ Masquerade enabled${NC}"
         fi
     fi
+
+    # Check bridge trusted zone (regardless of masquerade status)
+    ensure_bridge_trusted_zone
 }
 
 # Download binary from GitHub releases
