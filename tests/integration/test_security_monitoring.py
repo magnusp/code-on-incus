@@ -129,6 +129,20 @@ def get_container_state(name):
     return containers[0].get("status", "Unknown") if containers else "Unknown"
 
 
+def wait_for_container_running(name, timeout=30):
+    """Wait for container to reach Running state with retries.
+
+    Returns True if container is Running, False if it never reached Running
+    within the timeout period.
+    """
+    for _ in range(timeout):
+        state = get_container_state(name)
+        if state == "Running":
+            return True
+        time.sleep(1)
+    return False
+
+
 def get_threat_events(container_name):
     """Get threat events from audit log."""
     log_path = Path.home() / ".coi" / "audit" / f"{container_name}.jsonl"
@@ -552,6 +566,7 @@ class TestEnvironmentScanningPatterns:
 
     def test_proc_environ_access_detection(self, test_workspace, enable_monitoring, coi_binary):
         """Test /proc/*/environ access detection."""
+        container_name = get_container_name_from_workspace(test_workspace).rsplit("-", 1)[0] + "-18"
         proc = subprocess.Popen(
             [
                 coi_binary,
@@ -567,45 +582,41 @@ class TestEnvironmentScanningPatterns:
             stderr=subprocess.DEVNULL,
         )
 
-        time.sleep(8)
+        try:
+            if not wait_for_container_running(container_name, timeout=30):
+                pytest.skip(f"Container {container_name} not found or not running")
 
-        container_name = get_container_name_from_workspace(test_workspace).rsplit("-", 1)[0] + "-18"
+            # Wait for monitoring baseline to stabilize
+            time.sleep(10)
 
-        if get_container_state(container_name) == "Unknown":
+            # Inject command accessing /proc/*/environ
+            subprocess.Popen(
+                [
+                    "incus",
+                    "exec",
+                    container_name,
+                    "--",
+                    "bash",
+                    "-c",
+                    "exec -a 'cat /proc/1/environ' sleep 30",
+                ],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+
+            time.sleep(5)
+
+            # Container should stay running (WARNING level, not CRITICAL)
+            state = get_container_state(container_name)
+            assert state == "Running", f"Expected Running on WARNING, got {state}"
+
+            # Verify WARNING for /proc/environ access
+            events = get_threat_events(container_name)
+            warnings = [e for e in events if e.get("level") == "warning"]
+            assert len(warnings) > 0, "Expected WARNING for /proc/environ access"
+        finally:
             proc.terminate()
-            pytest.skip(f"Container {container_name} not found")
-
-        # Wait for monitoring baseline to stabilize
-        time.sleep(10)
-
-        # Inject command accessing /proc/*/environ
-        subprocess.Popen(
-            [
-                "incus",
-                "exec",
-                container_name,
-                "--",
-                "bash",
-                "-c",
-                "exec -a 'cat /proc/1/environ' sleep 30",
-            ],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        time.sleep(5)
-
-        # Container should stay running
-        state = get_container_state(container_name)
-        assert state == "Running", f"Expected Running on WARNING, got {state}"
-
-        # Verify WARNING for /proc/environ access
-        events = get_threat_events(container_name)
-        warnings = [e for e in events if e.get("level") == "warning"]
-        assert len(warnings) > 0, "Expected WARNING for /proc/environ access"
-
-        proc.terminate()
-        cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary)
 
     def test_set_export_command_detection(self, test_workspace, enable_monitoring, coi_binary):
         """Test that 'set' and 'export' commands trigger env scanning detection."""
