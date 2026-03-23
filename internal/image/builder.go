@@ -141,6 +141,11 @@ func (b *Builder) launchBuildContainer() error {
 		containerIP, err := network.GetContainerIP(b.mgr.ContainerName)
 		if err != nil {
 			b.opts.Logger(fmt.Sprintf("Warning: could not get container IP for firewall rules: %v", err))
+			// Check if bridge is not in trusted zone — this is the most common cause
+			if inZone, bridgeName, zoneErr := network.BridgeInTrustedZone(); zoneErr == nil && !inZone {
+				b.opts.Logger(fmt.Sprintf("Hint: Bridge %s is not in firewalld trusted zone. This is likely the cause.", bridgeName))
+				b.opts.Logger(fmt.Sprintf("      Fix: sudo firewall-cmd --zone=trusted --add-interface=%s --permanent && sudo firewall-cmd --reload", bridgeName))
+			}
 		} else {
 			if err := network.EnsureOpenModeRules(containerIP); err != nil {
 				b.opts.Logger(fmt.Sprintf("Warning: could not add firewall rules: %v", err))
