@@ -153,7 +153,7 @@ jobs:
           python-version: '3.12'
 
       - name: Cache Python dependencies
-        uses: actions/cache@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: ~/.cache/pip
           key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements*.txt', '**/pyproject.toml') }}
@@ -314,7 +314,7 @@ jobs:
 
       - name: Restore base Ubuntu image from cache
         id: cache-ubuntu-image
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: /tmp/ubuntu-base-image.tar.gz
           key: ${{ runner.os }}-ubuntu-22.04-base-image
@@ -345,7 +345,7 @@ jobs:
 
       - name: Save base Ubuntu image to cache
         if: steps.cache-ubuntu-image.outputs.cache-hit != 'true'
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: /tmp/ubuntu-base-image.tar.gz
           key: ${{ runner.os }}-ubuntu-22.04-base-image
@@ -421,7 +421,7 @@ jobs:
 
       - name: Restore COI image from cache
         id: cache-coi-image
-        uses: actions/cache/restore@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/restore@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: /tmp/coi-image.tar.gz
           key: ${{ runner.os }}-coi-image-${{ hashFiles('internal/image/**', 'testdata/dummy/**', 'scripts/build/**') }}
@@ -456,7 +456,7 @@ jobs:
 
       - name: Save COI image to cache
         if: steps.cache-coi-image.outputs.cache-hit != 'true'
-        uses: actions/cache/save@cdf6c1fa76f9f475f3d7449005a359c84ca0f306 # v5.0.3
+        uses: actions/cache/save@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
         with:
           path: /tmp/coi-image.tar.gz
           key: ${{ runner.os }}-coi-image-${{ hashFiles('internal/image/**', 'testdata/dummy/**', 'scripts/build/**') }}
