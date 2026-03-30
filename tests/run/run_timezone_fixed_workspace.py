@@ -56,6 +56,4 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
     assert tz_abbrev == "JST", (
         f"Timezone abbreviation should be JST for Asia/Tokyo, got: {tz_abbrev}"
     )
-    assert tz_offset == "+0900", (
-        f"Timezone offset should be +0900 for Asia/Tokyo, got: {tz_offset}"
-    )
+    assert tz_offset == "+0900", f"Timezone offset should be +0900 for Asia/Tokyo, got: {tz_offset}"
