@@ -16,9 +16,13 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
     Test that a fixed timezone is visible through workspace files on the host.
 
     Flow:
-    1. Run coi run --timezone Asia/Tokyo to write TZ to workspace file
-    2. Read the file back on the host and verify JST
+    1. Make workspace writable by container's code user (shift mapping)
+    2. Run coi run --timezone Asia/Tokyo to write TZ to workspace file
+    3. Read the file back on the host and verify JST
     """
+    # Ensure workspace is writable by container's code user through shift mapping
+    os.chmod(workspace_dir, 0o777)
+
     result = subprocess.run(
         [
             coi_binary,
