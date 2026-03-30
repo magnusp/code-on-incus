@@ -32,7 +32,7 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
             "--",
             "sh",
             "-c",
-            "date +%Z > /workspace/tz_test.txt && date '+%z' >> /workspace/tz_test.txt",
+            "date +%Z > /workspace/tz_test.txt; date +%z >> /workspace/tz_test.txt",
         ],
         capture_output=True,
         text=True,
