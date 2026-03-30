@@ -100,7 +100,7 @@ type SetupOptions struct {
 	ForwardSSHAgent       bool                 // Forward host SSH agent to container
 	ForwardedEnvVars      []string             // Names of host env vars being forwarded (for context file)
 	ContextFilePath       string               // Path to custom context .md file on host (overrides tool default)
-	Timezone              string       // Resolved IANA timezone name (e.g., "America/New_York"), empty for UTC
+	Timezone              string               // Resolved IANA timezone name (e.g., "America/New_York"), empty for UTC
 	Logger                func(string)
 	ContainerName         string // Use existing container (for testing) - skips container creation
 }

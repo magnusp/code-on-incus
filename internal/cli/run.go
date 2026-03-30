@@ -271,16 +271,7 @@ func runCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// Configure timezone in container filesystem
-	tz := resolveTimezone(cmd, cfg)
-	if tz != "" {
-		tzCmd := fmt.Sprintf(
-			"ln -sf /usr/share/zoneinfo/%s /etc/localtime && echo %s > /etc/timezone",
-			tz, tz,
-		)
-		if _, err := mgr.ExecCommand(tzCmd, container.ExecCommandOptions{Capture: true}); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to set timezone: %v\n", err)
-		}
-	}
+	tz := applyContainerTimezone(cmd, mgr)
 
 	// Execute command directly (args are already the full command to run)
 	fmt.Fprintf(os.Stderr, "Executing: %s\n", strings.Join(args, " "))
@@ -412,4 +403,20 @@ func hasAnyLimits(cfg *config.LimitsConfig) bool {
 		cfg.Disk.Max != "" ||
 		cfg.Disk.Priority != 0 ||
 		cfg.Runtime.MaxProcesses != 0
+}
+
+// applyContainerTimezone resolves the timezone and configures it inside the container.
+// Returns the resolved timezone name (empty for UTC).
+func applyContainerTimezone(cmd *cobra.Command, mgr *container.Manager) string {
+	tz := resolveTimezone(cmd, cfg)
+	if tz != "" {
+		tzCmd := fmt.Sprintf(
+			"ln -sf /usr/share/zoneinfo/%s /etc/localtime && echo %s > /etc/timezone",
+			tz, tz,
+		)
+		if _, err := mgr.ExecCommand(tzCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to set timezone: %v\n", err)
+		}
+	}
+	return tz
 }

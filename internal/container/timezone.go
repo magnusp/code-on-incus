@@ -45,9 +45,14 @@ func ValidateTimezone(tz string) bool {
 		return false
 	}
 
-	// Check that the zoneinfo file exists on the host
-	zonePath := filepath.Join("/usr/share/zoneinfo", tz)
-	info, err := os.Stat(zonePath)
+	// Check that the zoneinfo file exists on the host.
+	// Clean the path and verify it stays under /usr/share/zoneinfo/ to prevent traversal.
+	const zoneinfoRoot = "/usr/share/zoneinfo"
+	zonePath := filepath.Clean(filepath.Join(zoneinfoRoot, tz))
+	if !strings.HasPrefix(zonePath, zoneinfoRoot+"/") {
+		return false
+	}
+	info, err := os.Stat(zonePath) //nolint:gosec // path is validated above
 	if err != nil {
 		return false
 	}

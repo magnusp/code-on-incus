@@ -1,6 +1,7 @@
 package session
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -228,6 +229,93 @@ func TestTimezone_TZEnvOverridesLocaltime(t *testing.T) {
 		t.Errorf("date +%%Z without TZ = %q, want UTC", abbrev2)
 	}
 	t.Log("TZ env correctly overrides /etc/localtime")
+}
+
+// TestTimezone_WorkspaceFile verifies that a process inside the container can
+// write its timezone to a file in the mounted workspace, and that the host can
+// read back the correct value. This is the realistic scenario: a tool (e.g., git)
+// writes a timestamp using the container's configured timezone and the result is
+// visible on the host filesystem.
+func TestTimezone_WorkspaceFile(t *testing.T) {
+	skipUnlessTimezoneTestable(t)
+
+	// Use a timezone that is definitely NOT the host timezone.
+	// Pick Asia/Tokyo (JST, UTC+9) — unlikely to be the host TZ for CI/dev.
+	fixedTZ := "Asia/Tokyo"
+	if !container.ValidateTimezone(fixedTZ) {
+		t.Skipf("Timezone %q not available on host", fixedTZ)
+	}
+
+	containerName := "coi-test-tz-workspace"
+	mgr := launchTimezoneTestContainer(t, containerName)
+
+	// Create a temp directory on the host to serve as the workspace
+	workspaceDir := t.TempDir()
+
+	// Mount it into the container
+	useShift := true
+	if err := mgr.MountDisk("workspace", workspaceDir, "/workspace", useShift, false); err != nil {
+		t.Fatalf("Failed to mount workspace: %v", err)
+	}
+
+	// Apply the fixed timezone
+	tzCmd := "ln -sf /usr/share/zoneinfo/" + fixedTZ + " /etc/localtime && echo " + fixedTZ + " > /etc/timezone"
+	if _, err := mgr.ExecCommand(tzCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+		t.Fatalf("Failed to set timezone: %v", err)
+	}
+
+	// Inside the container, write the timezone to a file in the workspace.
+	// Use TZ env var to be explicit (same as buildContainerEnv does).
+	user := container.CodeUID
+	writeCmd := "date +%Z > /workspace/tz_test.txt && echo " + fixedTZ + " >> /workspace/tz_test.txt"
+	if _, err := mgr.ExecCommand(writeCmd, container.ExecCommandOptions{
+		Capture: true,
+		User:    &user,
+		Env:     map[string]string{"TZ": fixedTZ},
+	}); err != nil {
+		t.Fatalf("Failed to write timezone file: %v", err)
+	}
+
+	// Read the file back FROM THE HOST filesystem (through the mount)
+	hostFilePath := workspaceDir + "/tz_test.txt"
+	data, err := os.ReadFile(hostFilePath)
+	if err != nil {
+		t.Fatalf("Failed to read timezone file on host: %v", err)
+	}
+
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) < 2 {
+		t.Fatalf("Expected 2 lines in tz_test.txt, got %d: %q", len(lines), string(data))
+	}
+
+	tzAbbrev := strings.TrimSpace(lines[0])
+	tzName := strings.TrimSpace(lines[1])
+
+	if tzAbbrev != "JST" {
+		t.Errorf("Timezone abbreviation = %q, want JST", tzAbbrev)
+	}
+	if tzName != fixedTZ {
+		t.Errorf("Timezone name = %q, want %q", tzName, fixedTZ)
+	}
+
+	t.Logf("Workspace file on host contains: abbreviation=%s, name=%s", tzAbbrev, tzName)
+
+	// Also verify that a git-style timestamp written inside the container
+	// uses the correct timezone offset (+0900 for JST)
+	gitDateCmd := "date '+%Y-%m-%d %H:%M:%S %z'"
+	gitDateOutput, err := mgr.ExecCommand(gitDateCmd, container.ExecCommandOptions{
+		Capture: true,
+		User:    &user,
+		Env:     map[string]string{"TZ": fixedTZ},
+	})
+	if err != nil {
+		t.Fatalf("Failed to get git-style date: %v", err)
+	}
+	gitDate := strings.TrimSpace(gitDateOutput)
+	if !strings.HasSuffix(gitDate, "+0900") {
+		t.Errorf("Git-style date = %q, want suffix +0900 for JST", gitDate)
+	}
+	t.Logf("Git-style timestamp in container: %s", gitDate)
 }
 
 // TestTimezone_ConfigMerge verifies that TimezoneConfig merges correctly.
