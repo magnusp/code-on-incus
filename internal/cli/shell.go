@@ -796,8 +796,10 @@ func runCLIInTmux(result *session.SetupResult, sessionID string, detached bool, 
 // cmd may be nil (e.g., when called from appendEnvArgs in run.go), in which case
 // only the --timezone global var and config are consulted.
 func resolveTimezone(cmd *cobra.Command, cfg *config.Config) string {
+	// Check if --timezone flag was explicitly set. When cmd is nil (e.g., called
+	// from run.go's appendEnvArgs), fall back to checking the global var directly.
 	flagChanged := cmd != nil && cmd.Flags().Changed("timezone")
-	if flagChanged {
+	if flagChanged || (cmd == nil && timezone != "") {
 		switch strings.ToLower(timezone) {
 		case "host":
 			return detectHostTimezone()

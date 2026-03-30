@@ -454,6 +454,9 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 	}
 
 	// 6.7. Configure timezone inside container
+	// Always set result.Timezone so the TZ env var is applied even if the
+	// filesystem configuration fails (some programs only check TZ).
+	result.Timezone = opts.Timezone
 	if opts.Timezone != "" {
 		opts.Logger(fmt.Sprintf("Setting container timezone to %s...", opts.Timezone))
 		tzCmd := fmt.Sprintf(
@@ -462,8 +465,13 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		)
 		if _, err := result.Manager.ExecCommand(tzCmd, container.ExecCommandOptions{Capture: true}); err != nil {
 			opts.Logger(fmt.Sprintf("Warning: Failed to set timezone: %v", err))
-		} else {
-			result.Timezone = opts.Timezone
+		}
+	} else {
+		// Explicitly reset to UTC — important for persistent containers that may
+		// have had a different timezone applied in a previous session.
+		resetCmd := "ln -sf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"
+		if _, err := result.Manager.ExecCommand(resetCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+			opts.Logger(fmt.Sprintf("Warning: Failed to reset timezone to UTC: %v", err))
 		}
 	}
 

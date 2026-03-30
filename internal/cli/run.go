@@ -417,6 +417,13 @@ func applyContainerTimezone(cmd *cobra.Command, mgr *container.Manager) string {
 		if _, err := mgr.ExecCommand(tzCmd, container.ExecCommandOptions{Capture: true}); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Failed to set timezone: %v\n", err)
 		}
+	} else {
+		// Explicitly reset to UTC — important for persistent containers that may
+		// have had a different timezone applied in a previous session.
+		resetCmd := "ln -sf /usr/share/zoneinfo/UTC /etc/localtime && echo UTC > /etc/timezone"
+		if _, err := mgr.ExecCommand(resetCmd, container.ExecCommandOptions{Capture: true}); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to reset timezone to UTC: %v\n", err)
+		}
 	}
 	return tz
 }
