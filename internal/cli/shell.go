@@ -93,7 +93,7 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	}
 
 	// Get configured tool (needed to determine tool-specific sessions directory)
-	// --tool flag overrides whatever is in .coi.toml or global config
+	// --tool flag overrides whatever is in .coi/config.toml or global config
 	if toolFlag != "" {
 		cfg.Tool.Name = toolFlag
 	}
@@ -258,10 +258,16 @@ func shellCommand(cmd *cobra.Command, args []string) error {
 	// Resolve timezone
 	resolvedTimezone := resolveTimezone(cmd, cfg)
 
+	// Determine image: CLI --image flag > config defaults.image > "coi"
+	img := ResolveImageName(imageName, cfg)
+	if err := AutoBuildIfNeeded(cfg, img); err != nil {
+		return err
+	}
+
 	// Setup session
 	setupOpts := session.SetupOptions{
 		WorkspacePath:         absWorkspace,
-		Image:                 imageName,
+		Image:                 img,
 		Persistent:            persistent,
 		ResumeFromID:          resumeID,
 		Slot:                  slotNum,

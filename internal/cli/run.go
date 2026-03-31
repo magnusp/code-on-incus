@@ -77,19 +77,12 @@ func runCommand(cmd *cobra.Command, args []string) error {
 	// Generate container name
 	containerName := session.ContainerName(absWorkspace, slotNum)
 
-	// Determine image (use custom if specified, otherwise default)
-	img := imageName
-	if img == "" {
-		img = "coi"
-	}
+	// Determine image: CLI --image flag > config defaults.image > "coi"
+	img := ResolveImageName(imageName, cfg)
 
-	// Check if image exists
-	exists, err := container.ImageExists(img)
-	if err != nil {
-		return fmt.Errorf("failed to check image: %w", err)
-	}
-	if !exists {
-		return fmt.Errorf("image '%s' not found - run 'coi build %s' first", img, img)
+	// Check if image exists, auto-build from config if possible
+	if err := AutoBuildIfNeeded(cfg, img); err != nil {
+		return err
 	}
 
 	fmt.Fprintf(os.Stderr, "Launching container %s from image %s...\n", containerName, img)
