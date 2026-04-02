@@ -43,6 +43,7 @@ Run AI coding assistants (Claude Code, opencode, Aider, and more) in isolated, p
 - [Session Resume](#session-resume)
 - [Persistent Mode](#persistent-mode)
 - [Configuration](#configuration)
+- [Profiles](#profiles)
 - [Resource and Time Limits](https://github.com/mensfeld/code-on-incus/wiki/Resource-and-Time-Limits)
 - [Container Lifecycle & Session Persistence](https://github.com/mensfeld/code-on-incus/wiki/Container-Lifecycle-and-Sessions)
 - [Network Isolation](#network-isolation)
@@ -359,13 +360,14 @@ See the [Configuration wiki page](https://github.com/mensfeld/code-on-incus/wiki
 
 ## Profiles
 
-Profiles are reusable container configurations bundling image, tool, limits, mounts, build scripts, and environment into named templates. Each profile is a self-contained directory with its own `config.toml` and optional build script.
+Profiles are reusable container configurations bundling image, tool, limits, mounts, build scripts, context files, and environment into named templates. Each profile is a self-contained directory with its own `config.toml` and optional supporting files.
 
 ```
 .coi/profiles/
 ├── rust-dev/
 │   ├── config.toml      # profile config
-│   └── build.sh         # profile-specific build script
+│   ├── build.sh         # profile-specific build script
+│   └── CONTEXT.md       # AI agent context (appended to sandbox context)
 └── python-ml/
     ├── config.toml
     └── setup.sh
@@ -376,6 +378,7 @@ Example profile config (`.coi/profiles/rust-dev/config.toml`):
 ```toml
 image = "coi-rust"
 persistent = true
+context = "CONTEXT.md"
 forward_env = ["CARGO_HOME"]
 
 [environment]
@@ -389,6 +392,8 @@ permission_mode = "bypass"
 count = "4"
 ```
 
+**Profile context files:** When a profile includes `context = "CONTEXT.md"`, the referenced markdown file is automatically appended to `~/SANDBOX_CONTEXT.md` and tool-native auto-context files (e.g., `~/.claude/CLAUDE.md`) under a `# User-Provided Profile Context` heading. This gives AI agents profile-specific instructions (e.g., "use pytest", "follow PEP 8") without manual setup.
+
 ```bash
 # Use a profile
 coi shell --profile rust-dev
@@ -400,7 +405,7 @@ coi profile list
 coi profile show rust-dev
 ```
 
-Profile directories are scanned at all config levels (`/etc/coi/profiles/`, `~/.config/coi/profiles/`, `.coi/profiles/`).
+Profile directories are scanned at all config levels (`/etc/coi/profiles/`, `~/.config/coi/profiles/`, `.coi/profiles/`). See the [Profiles wiki page](https://github.com/mensfeld/code-on-incus/wiki/Profiles) for complete documentation.
 
 ## Resource and Time Limits
 
