@@ -41,6 +41,7 @@ type SetupOptions struct {
 	ForwardSSHAgent       bool                 // Forward host SSH agent to container
 	ForwardedEnvVars      []string             // Names of host env vars being forwarded (for context file)
 	ContextFilePath       string               // Path to custom context .md file on host (overrides tool default)
+	ProfileContextFile    string               // Path to profile context .md file (appended to sandbox context)
 	Timezone              string               // Resolved IANA timezone name (e.g., "America/New_York"), empty for UTC
 	AutoContext           *bool                // Auto-inject sandbox context into tool's native system (default: true)
 	Logger                func(string)
@@ -541,6 +542,18 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 			maxDuration = opts.LimitsConfig.Runtime.MaxDuration
 		}
 
+		// Read profile context file content if configured
+		var profileContext string
+		if opts.ProfileContextFile != "" {
+			data, err := os.ReadFile(opts.ProfileContextFile)
+			if err != nil {
+				opts.Logger(fmt.Sprintf("Warning: Failed to read profile context file %s: %v", opts.ProfileContextFile, err))
+			} else {
+				profileContext = string(data)
+				opts.Logger(fmt.Sprintf("Loaded profile context from %s", opts.ProfileContextFile))
+			}
+		}
+
 		ctxInfo := tool.ContextInfo{
 			WorkspacePath:      result.ContainerWorkspacePath,
 			HomeDir:            result.HomeDir,
@@ -558,6 +571,7 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 			MaxDuration:        maxDuration,
 			ToolName:           toolName,
 			ContainerName:      result.ContainerName,
+			ProfileContext:     profileContext,
 		}
 		contextContent = resolveContextContent(ctxInfo, opts.ContextFilePath, opts.Logger)
 		if err := injectContextFile(result.Manager, ctxInfo, opts.ContextFilePath, result.HomeDir, opts.Logger); err != nil {

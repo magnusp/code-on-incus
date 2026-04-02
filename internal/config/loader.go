@@ -28,6 +28,13 @@ func Load() (*Config, error) {
 	// Load from config files (in order)
 	paths := GetConfigPaths()
 	for _, path := range paths {
+		// Always scan for profile directories at this config level,
+		// even if the config file itself doesn't exist.
+		configDir := filepath.Dir(path)
+		if err := loadProfileDirectories(cfg, configDir); err != nil {
+			return nil, err
+		}
+
 		if err := loadConfigFile(cfg, path); err != nil {
 			// Only return error if file exists but can't be parsed
 			if !os.IsNotExist(err) {
@@ -61,15 +68,62 @@ func loadConfigFile(cfg *Config, path string) error {
 		return err
 	}
 
+	configDir := filepath.Dir(path)
+
 	// Resolve build script path relative to config file location
 	if fileCfg.Build.Script != "" {
-		configDir := filepath.Dir(path)
 		fileCfg.Build.Script = resolveRelativePath(configDir, fileCfg.Build.Script)
 	}
 
 	// Merge into main config
 	cfg.Merge(&fileCfg)
 
+	return nil
+}
+
+// loadProfileDirectories scans configDir/profiles/ for subdirectories containing config.toml
+// and adds them to cfg.Profiles. Each subdirectory name becomes the profile name.
+func loadProfileDirectories(cfg *Config, configDir string) error {
+	profilesDir := filepath.Join(configDir, "profiles")
+	entries, err := os.ReadDir(profilesDir)
+	if err != nil {
+		return nil // Directory doesn't exist or can't be read — that's fine
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		profileName := entry.Name()
+		profileConfigPath := filepath.Join(profilesDir, profileName, "config.toml")
+
+		if _, err := os.Stat(profileConfigPath); err != nil {
+			continue // No config.toml in this subdirectory
+		}
+
+		var profileCfg ProfileConfig
+		if _, err := toml.DecodeFile(profileConfigPath, &profileCfg); err != nil {
+			return fmt.Errorf("failed to parse profile %q config at %s: %w", profileName, profileConfigPath, err)
+		}
+
+		// Resolve paths relative to profile directory
+		profileDir := filepath.Join(profilesDir, profileName)
+		if profileCfg.Build != nil && profileCfg.Build.Script != "" {
+			profileCfg.Build.Script = resolveRelativePath(profileDir, profileCfg.Build.Script)
+		}
+		if profileCfg.Context != "" {
+			profileCfg.Context = resolveRelativePath(profileDir, profileCfg.Context)
+		}
+
+		// Tag with source location
+		profileCfg.Source = profileConfigPath
+
+		if cfg.Profiles == nil {
+			cfg.Profiles = make(map[string]ProfileConfig)
+		}
+		cfg.Profiles[profileName] = profileCfg
+	}
 	return nil
 }
 
@@ -279,29 +333,57 @@ writable_hooks = false
 # script = "build.sh"             # Path to build script (relative to config file)
 # commands = ["mise install ruby@3.3", "gem install bundler"]  # Or inline commands
 
-# Example profile for Rust development with persistent container
-# [profiles.rust]
-# image = "coi-rust"
-# environment = { RUST_BACKTRACE = "1" }
-# persistent = true
-
-# Example profile for web development
-# [profiles.web]
-# image = "coi"
-# environment = { NODE_ENV = "development" }
-# persistent = true
-
-# Example profile with resource limits
-# [profiles.limited]
-# image = "coi"
-# persistent = false
-# [profiles.limited.limits.cpu]
-# count = "2"
-# allowance = "50%"
-# [profiles.limited.limits.memory]
-# limit = "2GiB"
-# [profiles.limited.limits.runtime]
-# max_duration = "2h"
+# === Profiles ===
+# Profiles are self-contained directories under profiles/.
+# Each directory contains its own config.toml (and optionally a build script).
+#
+# Directory structure:
+#   .coi/
+#   ├── config.toml              # project config
+#   └── profiles/
+#       ├── rust-dev/
+#       │   ├── config.toml      # profile config
+#       │   └── build.sh         # profile-specific build script
+#       └── python-ml/
+#           ├── config.toml
+#           └── setup.sh
+#
+# Profile directory config.toml example (.coi/profiles/rust-dev/config.toml):
+#   image = "coi-rust"
+#   persistent = true
+#   context = "CONTEXT.md"    # extra context appended to SANDBOX_CONTEXT.md
+#   forward_env = ["RUST_BACKTRACE"]
+#
+#   [environment]
+#   RUST_BACKTRACE = "1"
+#
+#   [tool]
+#   name = "claude"
+#   permission_mode = "bypass"
+#
+#   [tool.claude]
+#   effort_level = "high"
+#
+#   [build]
+#   base = "coi"
+#   script = "build.sh"    # resolved relative to this config.toml
+#
+#   [[mounts]]
+#   host = "~/.cargo"
+#   container = "/home/code/.cargo"
+#
+#   [limits.cpu]
+#   count = "4"
+#
+#   [network]
+#   mode = "restricted"
+#
+# Profile directory scan locations (lowest to highest precedence):
+#   1. /etc/coi/profiles/NAME/config.toml
+#   2. ~/.config/coi/profiles/NAME/config.toml
+#   3. .coi/profiles/NAME/config.toml
+#
+# Use 'coi profile list' and 'coi profile show <name>' to inspect loaded profiles.
 `
 
 	// Create directory if it doesn't exist

@@ -1,26 +1,28 @@
 package config
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 )
 
 // Config represents the complete configuration
 type Config struct {
-	Defaults   DefaultsConfig           `toml:"defaults"`
-	Paths      PathsConfig              `toml:"paths"`
-	Incus      IncusConfig              `toml:"incus"`
-	Network    NetworkConfig            `toml:"network"`
-	Tool       ToolConfig               `toml:"tool"`
-	Mounts     MountsConfig             `toml:"mounts"`
-	Limits     LimitsConfig             `toml:"limits"`
-	Git        GitConfig                `toml:"git"`
-	SSH        SSHConfig                `toml:"ssh"`
-	Security   SecurityConfig           `toml:"security"`
-	Monitoring MonitoringConfig         `toml:"monitoring"`
-	Timezone   TimezoneConfig           `toml:"timezone"`
-	Build      BuildConfig              `toml:"build"`
-	Profiles   map[string]ProfileConfig `toml:"profiles"`
+	Defaults           DefaultsConfig           `toml:"defaults"`
+	Paths              PathsConfig              `toml:"paths"`
+	Incus              IncusConfig              `toml:"incus"`
+	Network            NetworkConfig            `toml:"network"`
+	Tool               ToolConfig               `toml:"tool"`
+	Mounts             MountsConfig             `toml:"mounts"`
+	Limits             LimitsConfig             `toml:"limits"`
+	Git                GitConfig                `toml:"git"`
+	SSH                SSHConfig                `toml:"ssh"`
+	Security           SecurityConfig           `toml:"security"`
+	Monitoring         MonitoringConfig         `toml:"monitoring"`
+	Timezone           TimezoneConfig           `toml:"timezone"`
+	Build              BuildConfig              `toml:"build"`
+	Profiles           map[string]ProfileConfig `toml:"-"` // Populated by loadProfileDirectories, not from TOML
+	ProfileContextFile string                   `toml:"-"` // Set by ApplyProfile, read by session setup
 }
 
 // BuildConfig defines how to build the project's custom image
@@ -143,9 +145,16 @@ type NetworkLoggingConfig struct {
 // ProfileConfig represents a named profile
 type ProfileConfig struct {
 	Image       string            `toml:"image"`
+	Context     string            `toml:"context"` // Path to context .md file (resolved relative to profile dir)
 	Environment map[string]string `toml:"environment"`
 	Persistent  *bool             `toml:"persistent"`
 	Limits      *LimitsConfig     `toml:"limits"`
+	Tool        *ToolConfig       `toml:"tool"`
+	Build       *BuildConfig      `toml:"build"`
+	Mounts      []MountEntry      `toml:"mounts"`
+	Network     *NetworkConfig    `toml:"network"`
+	ForwardEnv  []string          `toml:"forward_env"`
+	Source      string            `toml:"-"` // Where this profile was loaded from (not serialized)
 }
 
 // ToolConfig represents AI coding tool configuration
@@ -570,11 +579,6 @@ func (c *Config) Merge(other *Config) {
 	if len(other.Build.Commands) > 0 {
 		c.Build.Commands = other.Build.Commands
 	}
-
-	// Merge profiles
-	for name, profile := range other.Profiles {
-		c.Profiles[name] = profile
-	}
 }
 
 // mergeLimits merges limit configurations (other takes precedence)
@@ -700,11 +704,16 @@ func (c *Config) GetProfile(name string) *ProfileConfig {
 	return nil
 }
 
-// ApplyProfile applies a profile's settings to the defaults
-func (c *Config) ApplyProfile(name string) bool {
+// ApplyProfile applies a profile's settings to the defaults.
+// Returns an error if the profile is not found or fails validation.
+func (c *Config) ApplyProfile(name string) error {
 	profile := c.GetProfile(name)
 	if profile == nil {
-		return false
+		return fmt.Errorf("profile '%s' not found", name)
+	}
+
+	if err := profile.Validate(name); err != nil {
+		return err
 	}
 
 	if profile.Image != "" {
@@ -729,5 +738,123 @@ func (c *Config) ApplyProfile(name string) bool {
 		mergeLimits(&c.Limits, profile.Limits)
 	}
 
-	return true
+	// Apply profile tool settings if present
+	if profile.Tool != nil {
+		if profile.Tool.Name != "" {
+			c.Tool.Name = profile.Tool.Name
+		}
+		if profile.Tool.Binary != "" {
+			c.Tool.Binary = profile.Tool.Binary
+		}
+		if profile.Tool.PermissionMode != "" {
+			c.Tool.PermissionMode = profile.Tool.PermissionMode
+		}
+		if profile.Tool.ContextFile != "" {
+			c.Tool.ContextFile = ExpandPath(profile.Tool.ContextFile)
+		}
+		if profile.Tool.AutoContext != nil {
+			c.Tool.AutoContext = profile.Tool.AutoContext
+		}
+		if profile.Tool.Claude.EffortLevel != "" {
+			c.Tool.Claude.EffortLevel = profile.Tool.Claude.EffortLevel
+		}
+	}
+
+	// Apply profile build config if present
+	if profile.Build != nil {
+		if profile.Build.Base != "" {
+			c.Build.Base = profile.Build.Base
+		}
+		if profile.Build.Script != "" {
+			c.Build.Script = profile.Build.Script
+		}
+		if len(profile.Build.Commands) > 0 {
+			c.Build.Commands = profile.Build.Commands
+		}
+	}
+
+	// Apply profile mounts if present (append to defaults)
+	if len(profile.Mounts) > 0 {
+		c.Mounts.Default = append(c.Mounts.Default, profile.Mounts...)
+	}
+
+	// Apply profile network settings if present
+	if profile.Network != nil {
+		if profile.Network.Mode != "" {
+			c.Network.Mode = profile.Network.Mode
+		}
+		if profile.Network.BlockPrivateNetworks != nil {
+			c.Network.BlockPrivateNetworks = profile.Network.BlockPrivateNetworks
+		}
+		if profile.Network.BlockMetadataEndpoint != nil {
+			c.Network.BlockMetadataEndpoint = profile.Network.BlockMetadataEndpoint
+		}
+		if profile.Network.AllowLocalNetworkAccess != nil {
+			c.Network.AllowLocalNetworkAccess = profile.Network.AllowLocalNetworkAccess
+		}
+		if len(profile.Network.AllowedDomains) > 0 {
+			c.Network.AllowedDomains = profile.Network.AllowedDomains
+		}
+		if profile.Network.RefreshIntervalMinutes != 0 {
+			c.Network.RefreshIntervalMinutes = profile.Network.RefreshIntervalMinutes
+		}
+		if profile.Network.Logging.Path != "" {
+			c.Network.Logging.Path = ExpandPath(profile.Network.Logging.Path)
+		}
+		if profile.Network.Logging.Enabled != nil {
+			c.Network.Logging.Enabled = profile.Network.Logging.Enabled
+		}
+	}
+
+	// Apply profile forward_env if present
+	if len(profile.ForwardEnv) > 0 {
+		c.Defaults.ForwardEnv = MergeStringSliceUnique(c.Defaults.ForwardEnv, profile.ForwardEnv)
+	}
+
+	// Apply profile context file if present
+	if profile.Context != "" {
+		c.ProfileContextFile = profile.Context
+	}
+
+	return nil
+}
+
+// Validate checks that a profile's configuration is valid.
+// Called when the profile is actually used (--profile flag), not at load time.
+func (p *ProfileConfig) Validate(name string) error {
+	// Validate context file exists if specified
+	if p.Context != "" {
+		if _, err := os.Stat(p.Context); err != nil {
+			return fmt.Errorf("profile '%s': context file %q does not exist", name, p.Context)
+		}
+	}
+
+	// Validate build script exists if specified
+	if p.Build != nil && p.Build.Script != "" {
+		if _, err := os.Stat(p.Build.Script); err != nil {
+			return fmt.Errorf("profile '%s': build script %q does not exist", name, p.Build.Script)
+		}
+	}
+
+	// Validate mount entries are complete
+	for i, m := range p.Mounts {
+		if m.Host == "" {
+			return fmt.Errorf("profile '%s': mount[%d] is missing 'host' path", name, i)
+		}
+		if m.Container == "" {
+			return fmt.Errorf("profile '%s': mount[%d] is missing 'container' path", name, i)
+		}
+	}
+
+	// Validate network mode if set
+	if p.Network != nil && p.Network.Mode != "" {
+		switch p.Network.Mode {
+		case "open", "restricted", "allowlist":
+			// valid
+		default:
+			return fmt.Errorf("profile '%s': invalid network mode %q (must be open, restricted, or allowlist)", name, p.Network.Mode)
+		}
+	}
+
+	return nil
 }

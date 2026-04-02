@@ -90,8 +90,8 @@ Examples:
 
 		// Apply profile if specified
 		if profile != "" {
-			if !cfg.ApplyProfile(profile) {
-				return fmt.Errorf("profile '%s' not found", profile)
+			if err := cfg.ApplyProfile(profile); err != nil {
+				return err
 			}
 		}
 
@@ -173,6 +173,7 @@ func init() {
 	rootCmd.AddCommand(snapshotCmd)
 	rootCmd.AddCommand(resumeCmd)
 	rootCmd.AddCommand(updateCmd)
+	rootCmd.AddCommand(profileCmd)
 }
 
 var versionCmd = &cobra.Command{
