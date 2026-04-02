@@ -261,6 +261,9 @@ coi kill --all
 
 # Cleanup stopped containers and orphaned resources
 coi clean
+
+# Update coi to the latest release
+coi update
 ```
 
 ### Global Flags
