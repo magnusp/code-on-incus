@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -14,7 +15,14 @@ func main() {
 	isCoi := progName == "coi"
 
 	if err := cli.Execute(isCoi); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		var exitErr *cli.ExitCodeError
+		if errors.As(err, &exitErr) {
+			if exitErr.Message != "" {
+				fmt.Fprintln(os.Stderr, exitErr.Message)
+			}
+			os.Exit(exitErr.Code)
+		}
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }

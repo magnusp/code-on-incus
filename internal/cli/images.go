@@ -69,7 +69,7 @@ Examples:
 		// Publish container
 		fingerprint, err := container.PublishContainer(containerName, aliasName, description, compression)
 		if err != nil {
-			return exitError(1, fmt.Sprintf("failed to publish container: %v", err))
+			return fmt.Errorf("failed to publish container: %v", err)
 		}
 
 		// Output as JSON
@@ -93,7 +93,7 @@ var imageDeleteCmd = &cobra.Command{
 		aliasName := args[0]
 
 		if err := container.DeleteImage(aliasName); err != nil {
-			return exitError(1, fmt.Sprintf("failed to delete image: %v", err))
+			return fmt.Errorf("failed to delete image: %v", err)
 		}
 
 		fmt.Fprintf(os.Stderr, "Image %s deleted\n", aliasName)
@@ -103,19 +103,20 @@ var imageDeleteCmd = &cobra.Command{
 
 // imageExistsCmd checks if an image exists
 var imageExistsCmd = &cobra.Command{
-	Use:   "exists <alias>",
-	Short: "Check if an image exists",
-	Args:  cobra.ExactArgs(1),
+	Use:          "exists <alias>",
+	Short:        "Check if an image exists",
+	Args:         cobra.ExactArgs(1),
+	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		aliasName := args[0]
 
 		exists, err := container.ImageExists(aliasName)
 		if err != nil {
-			return exitError(1, fmt.Sprintf("failed to check image: %v", err))
+			return fmt.Errorf("failed to check image: %v", err)
 		}
 
 		if !exists {
-			return exitError(1, "")
+			return &ExitCodeError{Code: 1}
 		}
 
 		return nil
@@ -139,12 +140,12 @@ Example:
 		keepCount, _ := cmd.Flags().GetInt("keep")
 
 		if keepCount <= 0 {
-			return exitError(2, "--keep must be > 0")
+			return &ExitCodeError{Code: 2, Message: "--keep must be > 0"}
 		}
 
 		deleted, kept, err := image.Cleanup(prefix, keepCount)
 		if err != nil {
-			return exitError(1, fmt.Sprintf("cleanup failed: %v", err))
+			return fmt.Errorf("cleanup failed: %v", err)
 		}
 
 		fmt.Fprintf(os.Stderr, "Cleanup complete:\n")
