@@ -85,13 +85,14 @@ def get_nft_threat_events(container_name):
     return events
 
 
-def cleanup_container(name, coi_binary):
+def cleanup_container(name, coi_binary, env=None):
     """Force cleanup container."""
     subprocess.run(
         [coi_binary, "container", "delete", name, "--force"],
         timeout=60,
         capture_output=True,
         check=False,
+        env=env,
     )
 
 
@@ -159,10 +160,33 @@ def nft_monitoring_available():
 
 @pytest.fixture
 def test_workspace(tmp_path):
-    """Create a temporary workspace for tests."""
+    """Create a temporary workspace for tests with monitoring config."""
     workspace = tmp_path / "nft-test-workspace"
     workspace.mkdir()
+
+    # Create config that enables monitoring (replaces --monitor flag)
+    config_dir = workspace / ".coi"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "config.toml").write_text("""
+[monitoring]
+enabled = true
+auto_kill_on_critical = true
+auto_pause_on_high = true
+
+[monitoring.nft]
+enabled = true
+""")
+
     return str(workspace)
+
+
+@pytest.fixture
+def coi_monitoring_env(test_workspace):
+    """Return environment dict with COI_CONFIG pointing to workspace config."""
+    config_path = os.path.join(test_workspace, ".coi", "config.toml")
+    env = os.environ.copy()
+    env["COI_CONFIG"] = config_path
+    return env
 
 
 class TestNFTRuleManagement:
@@ -173,7 +197,7 @@ class TestNFTRuleManagement:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_rules_created_on_session_start(self, test_workspace, coi_binary):
+    def test_rules_created_on_session_start(self, test_workspace, coi_binary, coi_monitoring_env):
         """Verify nftables LOG rules are created when session starts."""
         slot = 50
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -187,11 +211,11 @@ class TestNFTRuleManagement:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -215,9 +239,9 @@ class TestNFTRuleManagement:
         finally:
             proc.terminate()
             proc.wait(timeout=10)
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
-    def test_rules_removed_on_session_end(self, test_workspace, coi_binary):
+    def test_rules_removed_on_session_end(self, test_workspace, coi_binary, coi_monitoring_env):
         """Verify nftables rules are cleaned up when session ends."""
         slot = 51
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -231,11 +255,11 @@ class TestNFTRuleManagement:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -275,9 +299,9 @@ class TestNFTRuleManagement:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
-    def test_multiple_rule_types(self, test_workspace, coi_binary):
+    def test_multiple_rule_types(self, test_workspace, coi_binary, coi_monitoring_env):
         """Verify core rule types are created (general, suspicious)."""
         slot = 52
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -290,11 +314,11 @@ class TestNFTRuleManagement:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -332,7 +356,7 @@ class TestNFTRuleManagement:
         finally:
             proc.terminate()
             proc.wait(timeout=10)
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 class TestNetworkThreatDetection:
@@ -343,7 +367,9 @@ class TestNetworkThreatDetection:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_metadata_endpoint_triggers_critical(self, test_workspace, coi_binary):
+    def test_metadata_endpoint_triggers_critical(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
         """Test that metadata endpoint access triggers CRITICAL alert."""
         slot = 53
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -356,11 +382,11 @@ class TestNetworkThreatDetection:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -417,9 +443,11 @@ class TestNetworkThreatDetection:
         finally:
             proc.terminate()
             proc.wait(timeout=10)
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
-    def test_container_killed_on_metadata_access(self, test_workspace, coi_binary):
+    def test_container_killed_on_metadata_access(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
         """Verify container is killed when accessing cloud metadata endpoint."""
         slot = 54
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -432,11 +460,11 @@ class TestNetworkThreatDetection:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -491,9 +519,9 @@ class TestNetworkThreatDetection:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
-    def test_network_activity_counted(self, test_workspace, coi_binary):
+    def test_network_activity_counted(self, test_workspace, coi_binary, coi_monitoring_env):
         """Test that network activity hits NFT rules (verified via counters)."""
         slot = 55
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -506,11 +534,11 @@ class TestNetworkThreatDetection:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -550,7 +578,7 @@ class TestNetworkThreatDetection:
         finally:
             proc.terminate()
             proc.wait(timeout=10)
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 class TestAuditLogging:
@@ -561,7 +589,7 @@ class TestAuditLogging:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_audit_log_created(self, test_workspace, coi_binary):
+    def test_audit_log_created(self, test_workspace, coi_binary, coi_monitoring_env):
         """Test that audit log file is created when monitoring starts."""
         slot = 56
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -574,11 +602,11 @@ class TestAuditLogging:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -601,7 +629,7 @@ class TestAuditLogging:
         finally:
             proc.terminate()
             proc.wait(timeout=10)
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 class TestDaemonLifecycle:
@@ -612,8 +640,10 @@ class TestDaemonLifecycle:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_daemon_starts_with_monitoring_flag(self, test_workspace, coi_binary):
-        """Test that daemon starts when --monitor flag is used."""
+    def test_daemon_starts_with_monitoring_config(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
+        """Test that daemon starts when monitoring is enabled via config."""
         slot = 57
         container_name = get_container_name_from_workspace(test_workspace, slot)
 
@@ -628,11 +658,11 @@ class TestDaemonLifecycle:
                     test_workspace,
                     "--slot",
                     str(slot),
-                    "--monitor",
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=stderr_fd,
+                env=coi_monitoring_env,
             )
 
             try:
@@ -651,7 +681,7 @@ class TestDaemonLifecycle:
             finally:
                 proc.terminate()
                 proc.wait(timeout=10)
-                cleanup_container(container_name, coi_binary)
+                cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
                 stderr_file.unlink(missing_ok=True)
 
 
@@ -663,7 +693,7 @@ class TestNFTRuleCleanupOnKill:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_nft_rules_cleaned_on_coi_kill(self, test_workspace, coi_binary):
+    def test_nft_rules_cleaned_on_coi_kill(self, test_workspace, coi_binary, coi_monitoring_env):
         """Verify NFT rules are removed when container is killed via coi kill."""
         slot = 60
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -677,11 +707,11 @@ class TestNFTRuleCleanupOnKill:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -708,6 +738,7 @@ class TestNFTRuleCleanupOnKill:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                env=coi_monitoring_env,
             )
             assert kill_result.returncode == 0, f"coi kill failed: {kill_result.stderr}"
 
@@ -725,9 +756,9 @@ class TestNFTRuleCleanupOnKill:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
-    def test_nft_rules_cleaned_on_auto_kill(self, test_workspace, coi_binary):
+    def test_nft_rules_cleaned_on_auto_kill(self, test_workspace, coi_binary, coi_monitoring_env):
         """Verify NFT rules are removed when container is auto-killed by responder."""
         slot = 61
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -740,11 +771,11 @@ class TestNFTRuleCleanupOnKill:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -808,7 +839,7 @@ class TestNFTRuleCleanupOnKill:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 class TestNFTRuleCleanupOnShutdown:
@@ -819,7 +850,9 @@ class TestNFTRuleCleanupOnShutdown:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_nft_rules_cleaned_on_coi_shutdown(self, test_workspace, coi_binary):
+    def test_nft_rules_cleaned_on_coi_shutdown(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
         """Verify NFT rules are removed when container is shutdown via coi shutdown."""
         slot = 62
         container_name = get_container_name_from_workspace(test_workspace, slot)
@@ -833,11 +866,11 @@ class TestNFTRuleCleanupOnShutdown:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -874,6 +907,7 @@ class TestNFTRuleCleanupOnShutdown:
                 capture_output=True,
                 text=True,
                 timeout=60,
+                env=coi_monitoring_env,
             )
             assert shutdown_result.returncode == 0, f"coi shutdown failed: {shutdown_result.stderr}"
 
@@ -891,7 +925,7 @@ class TestNFTRuleCleanupOnShutdown:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 def check_firewall_rules_exist(container_ip):
@@ -915,12 +949,22 @@ class TestFirewallRuleCleanupOnAutoKill:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_firewall_rules_cleaned_on_auto_kill(self, test_workspace, coi_binary):
+    def test_firewall_rules_cleaned_on_auto_kill(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
         """Verify firewall rules are removed when container is auto-killed by responder."""
         slot = 63
         container_name = get_container_name_from_workspace(test_workspace, slot)
 
-        # Start session with monitoring AND restricted network (to have firewall rules)
+        # Add restricted network to config (needed for firewall rules)
+        import pathlib
+
+        config_path = pathlib.Path(test_workspace) / ".coi" / "config.toml"
+        config_text = config_path.read_text()
+        if "[network]" not in config_text:
+            config_path.write_text(config_text + '\n[network]\nmode = "restricted"\n')
+
+        # Start session with monitoring (via config) AND restricted network (to have firewall rules)
         proc = subprocess.Popen(
             [
                 coi_binary,
@@ -929,13 +973,11 @@ class TestFirewallRuleCleanupOnAutoKill:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
-                "--network",
-                "restricted",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -996,7 +1038,7 @@ class TestFirewallRuleCleanupOnAutoKill:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 def get_container_veth_name(container_name):
@@ -1049,12 +1091,22 @@ class TestVethZoneCleanupOnAutoKill:
         """Ensure NFT monitoring is available before running tests."""
         pass
 
-    def test_veth_zone_binding_cleaned_on_auto_kill(self, test_workspace, coi_binary):
+    def test_veth_zone_binding_cleaned_on_auto_kill(
+        self, test_workspace, coi_binary, coi_monitoring_env
+    ):
         """Verify veth zone binding is removed when container is auto-killed by responder."""
         slot = 64
         container_name = get_container_name_from_workspace(test_workspace, slot)
 
-        # Start session with monitoring AND restricted network (to have veth zone bindings)
+        # Add restricted network to config (needed for veth zone bindings)
+        import pathlib
+
+        config_path = pathlib.Path(test_workspace) / ".coi" / "config.toml"
+        config_text = config_path.read_text()
+        if "[network]" not in config_text:
+            config_path.write_text(config_text + '\n[network]\nmode = "restricted"\n')
+
+        # Start session with monitoring (via config) AND restricted network (to have veth zone bindings)
         proc = subprocess.Popen(
             [
                 coi_binary,
@@ -1063,13 +1115,11 @@ class TestVethZoneCleanupOnAutoKill:
                 test_workspace,
                 "--slot",
                 str(slot),
-                "--monitor",
-                "--network",
-                "restricted",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
+            env=coi_monitoring_env,
         )
 
         try:
@@ -1149,19 +1199,20 @@ class TestVethZoneCleanupOnAutoKill:
                 proc.wait(timeout=5)
             except subprocess.TimeoutExpired:
                 proc.kill()
-            cleanup_container(container_name, coi_binary)
+            cleanup_container(container_name, coi_binary, env=coi_monitoring_env)
 
 
 class TestHealthChecks:
     """Test NFT monitoring health checks."""
 
-    def test_health_command_runs(self, coi_binary):
+    def test_health_command_runs(self, coi_binary, coi_monitoring_env):
         """Test that health command runs successfully."""
         result = subprocess.run(
             [coi_binary, "health", "--verbose"],
             capture_output=True,
             text=True,
             timeout=60,
+            env=coi_monitoring_env,
         )
         # Health may return 1 (DEGRADED) with warnings - that's acceptable
         # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
@@ -1171,13 +1222,14 @@ class TestHealthChecks:
             f"Expected health check summary in output:\n{result.stdout}"
         )
 
-    def test_health_includes_monitoring_check(self, coi_binary):
+    def test_health_includes_monitoring_check(self, coi_binary, coi_monitoring_env):
         """Test that health includes monitoring-related checks."""
         result = subprocess.run(
             [coi_binary, "health", "--verbose"],
             capture_output=True,
             text=True,
             timeout=60,
+            env=coi_monitoring_env,
         )
         # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
         # health output content, not that the CI runner's system is fully healthy.
@@ -1187,13 +1239,14 @@ class TestHealthChecks:
             f"No monitoring checks found in health output:\n{result.stdout}"
         )
 
-    def test_health_includes_network_check(self, coi_binary):
+    def test_health_includes_network_check(self, coi_binary, coi_monitoring_env):
         """Test that health includes network-related checks."""
         result = subprocess.run(
             [coi_binary, "health", "--verbose"],
             capture_output=True,
             text=True,
             timeout=60,
+            env=coi_monitoring_env,
         )
         # Accept 0 (healthy), 1 (degraded), or 2 (unhealthy) — these tests verify
         # health output content, not that the CI runner's system is fully healthy.

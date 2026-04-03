@@ -2,7 +2,7 @@
 Test for network isolation - open mode allows local gateway access.
 
 Tests that:
-1. Container with --network=open does not block local gateway
+1. Container with open network mode does not block local gateway
 2. ACL is not applied, so connection attempts are made
 3. Works regardless of what private network range the host uses
 """
@@ -19,7 +19,7 @@ def test_open_allows_local_gateway(coi_binary, workspace_dir, cleanup_containers
     private network range (10.x.x.x, 172.16-31.x.x, 192.168.x.x).
 
     Flow:
-    1. Start shell with --network=open
+    1. Start shell with open network mode (via config file)
     2. Verify open mode is active (check stderr message)
     3. Extract container name
     4. Verify internet access works (sanity check)
@@ -28,15 +28,20 @@ def test_open_allows_local_gateway(coi_binary, workspace_dir, cleanup_containers
     7. Verify connection is NOT blocked by ACL (may still fail if nothing listening, but won't be ACL-rejected)
     8. Cleanup container
     """
-    # Start shell in background with open network mode
+    # Create config with open network mode
+    import pathlib
+
+    config_dir = pathlib.Path(workspace_dir) / ".coi"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "config.toml").write_text('[network]\nmode = "open"\n')
+
+    # Start shell in background with open network mode (via config)
     result = subprocess.run(
         [
             coi_binary,
             "shell",
             "--workspace",
             workspace_dir,
-            "--network",
-            "open",
             "--background",
             "--debug",
         ],
