@@ -171,20 +171,6 @@ def cleanup_container(name, coi_binary):
     )
 
 
-class TestMonitoringFeature:
-    """Test monitoring feature availability."""
-
-    def test_monitor_flag_recognized(self, coi_binary):
-        """Verify --monitor flag exists."""
-        result = subprocess.run(
-            [coi_binary, "shell", "--help"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-        )
-        assert "--monitor" in result.stdout or "--monitor" in result.stderr
-
-
 class TestThreatDetection:
     """Test threat detection for different attack types."""
 
@@ -346,7 +332,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "14",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -401,7 +386,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "15",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -456,7 +440,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "16",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -511,7 +494,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "17",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -567,7 +549,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "18",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -620,7 +601,6 @@ class TestEnvironmentScanningPatterns:
                 test_workspace,
                 "--slot",
                 "34",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -765,7 +745,6 @@ print("Task completed")
                 str(test_workspace),
                 "--slot",
                 "4",
-                "--monitor",  # Enable monitoring
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -835,8 +814,6 @@ print("Task completed")
     def test_monitoring_logs_for_warnings(self, test_workspace, enable_monitoring, coi_binary):
         """Verify monitoring logs contain WARNING messages, not just audit logs."""
         # Start shell - monitoring is enabled via enable_monitoring fixture config
-        # Don't use --monitor flag as it enables auto_pause_on_high which can cause
-        # spurious pauses from container startup activity
         proc = subprocess.Popen(
             [
                 coi_binary,
@@ -914,7 +891,7 @@ class TestHighLevelThreats:
         large_file.write_bytes(b"S" * (200 * 1024 * 1024))
 
         proc = subprocess.Popen(
-            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "6", "--monitor"],
+            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "6"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1141,7 +1118,7 @@ time.sleep(60)
         network_script.chmod(0o755)
 
         proc = subprocess.Popen(
-            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "8", "--monitor"],
+            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "8"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1212,7 +1189,7 @@ time.sleep(60)
         metadata_script.chmod(0o755)
 
         proc = subprocess.Popen(
-            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "9", "--monitor"],
+            [coi_binary, "shell", "--workspace", str(test_workspace), "--slot", "9"],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -1287,7 +1264,6 @@ time.sleep(60)
                 str(test_workspace),
                 "--slot",
                 "35",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1367,7 +1343,6 @@ time.sleep(60)
                 str(test_workspace),
                 "--slot",
                 "36",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1420,7 +1395,6 @@ class TestReverseShellPatterns:
                 test_workspace,
                 "--slot",
                 "10",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1490,7 +1464,6 @@ class TestReverseShellPatterns:
                 test_workspace,
                 "--slot",
                 "11",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1560,7 +1533,6 @@ class TestReverseShellPatterns:
                 test_workspace,
                 "--slot",
                 "12",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1640,7 +1612,6 @@ class TestReverseShellPatterns:
                 test_workspace,
                 "--slot",
                 "30",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1718,7 +1689,6 @@ class TestReverseShellPatterns:
                 test_workspace,
                 "--slot",
                 "31",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -1809,7 +1779,7 @@ enabled = false
         )
 
         try:
-            # Start shell WITHOUT --monitor flag (should respect config)
+            # Start shell (should respect config with monitoring disabled)
             proc = subprocess.Popen(
                 [coi_binary, "shell", "--workspace", test_workspace, "--slot", "13"],
                 stdin=subprocess.DEVNULL,
@@ -1866,7 +1836,7 @@ enabled = false
                 config_path.unlink()
 
     def test_monitoring_enabled_via_config_only(self, test_workspace, coi_binary):
-        """Test monitoring enabled via config file without --monitor flag."""
+        """Test monitoring enabled via config file."""
         # Create config with monitoring enabled - include network section for completeness
         config_path = Path.home() / ".config" / "coi" / "config.toml"
         backup = config_path.read_text() if config_path.exists() else None
@@ -1888,7 +1858,7 @@ mode = "restricted"
         )
 
         try:
-            # Start shell WITHOUT --monitor flag (config should enable it)
+            # Start shell (config should enable monitoring)
             proc = subprocess.Popen(
                 [coi_binary, "shell", "--workspace", test_workspace, "--slot", "19"],
                 stdin=subprocess.DEVNULL,
@@ -1982,8 +1952,8 @@ mode = "restricted"
             elif config_path.exists():
                 config_path.unlink()
 
-    def test_monitor_flag_overrides_config_auto_kill_disabled(self, test_workspace, coi_binary):
-        """Test that --monitor flag forces auto_kill_on_critical=true even when config disables it."""
+    def test_config_auto_kill_enabled_kills_on_critical(self, test_workspace, coi_binary):
+        """Test that auto_kill_on_critical=true in config kills container on critical threat."""
         config_path = Path.home() / ".config" / "coi" / "config.toml"
         backup = config_path.read_text() if config_path.exists() else None
 
@@ -1995,7 +1965,7 @@ mode = "open"
 
 [monitoring]
 enabled = true
-auto_kill_on_critical = false
+auto_kill_on_critical = true
 poll_interval_sec = 1
 file_read_threshold_mb = 500
 file_read_rate_mb_per_sec = 1000
@@ -2003,7 +1973,7 @@ file_read_rate_mb_per_sec = 1000
         )
 
         try:
-            # Start shell WITH --monitor flag: should force auto_kill regardless of config
+            # Start shell with monitoring enabled via config (auto_kill_on_critical=true)
             proc = subprocess.Popen(
                 [
                     coi_binary,
@@ -2012,7 +1982,6 @@ file_read_rate_mb_per_sec = 1000
                     test_workspace,
                     "--slot",
                     "32",
-                    "--monitor",
                 ],
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
@@ -2047,7 +2016,7 @@ file_read_rate_mb_per_sec = 1000
 
             time.sleep(5)
 
-            # Container SHOULD be killed: --monitor flag forces auto_kill_on_critical=true
+            # Container SHOULD be killed: config has auto_kill_on_critical=true
             killed = False
             final_state = "Unknown"
             for _ in range(15):
@@ -2060,7 +2029,7 @@ file_read_rate_mb_per_sec = 1000
 
             # Always print debug info for this test to help diagnose CI failures
             events = get_threat_events(container_name)
-            print("\n=== DEBUG: --monitor override test ===")
+            print("\n=== DEBUG: config auto_kill test ===")
             print(f"Container killed: {killed}, Final state: {final_state}")
             print(f"Total threat events: {len(events)}")
             for event in events:
@@ -2075,8 +2044,7 @@ file_read_rate_mb_per_sec = 1000
             # the startup check, so we proceed with verification.
 
             assert killed, (
-                "--monitor flag should force auto_kill_on_critical=true "
-                "even when config has auto_kill_on_critical=false"
+                "auto_kill_on_critical=true in config should kill container on critical threat"
             )
 
             # The monitoring daemon writes to the audit log and kills the
@@ -2124,7 +2092,6 @@ class TestMultipleThreats:
                 test_workspace,
                 "--slot",
                 "20",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2230,7 +2197,6 @@ class TestAuditLogValidation:
                 test_workspace,
                 "--slot",
                 "21",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2322,7 +2288,6 @@ class TestAuditLogValidation:
                 test_workspace,
                 "--slot",
                 "22",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2398,7 +2363,6 @@ class TestFalsePositives:
                 test_workspace,
                 "--slot",
                 "23",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2477,7 +2441,6 @@ class TestFalsePositives:
                 test_workspace,
                 "--slot",
                 "24",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2556,7 +2519,6 @@ time.sleep(2)
                 test_workspace,
                 "--slot",
                 "25",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2632,7 +2594,6 @@ echo "Build complete"
                 test_workspace,
                 "--slot",
                 "26",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2725,7 +2686,6 @@ class TestThresholdBoundaries:
                 test_workspace,
                 "--slot",
                 "27",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2807,7 +2767,6 @@ class TestThresholdBoundaries:
                 test_workspace,
                 "--slot",
                 "28",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2903,7 +2862,6 @@ class TestThresholdBoundaries:
                 test_workspace,
                 "--slot",
                 "29",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -2985,7 +2943,6 @@ class TestThresholdBoundaries:
                 test_workspace,
                 "--slot",
                 "33",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3075,7 +3032,6 @@ class DisabledTestDiskSpaceMonitoring:
                 test_workspace,
                 "--slot",
                 "40",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3185,7 +3141,6 @@ class DisabledTestDiskSpaceMonitoring:
                 test_workspace,
                 "--slot",
                 "41",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3286,7 +3241,6 @@ class TestLargeWriteDetection:
                 test_workspace,
                 "--slot",
                 "42",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3366,7 +3320,6 @@ class TestLargeWriteDetection:
                 test_workspace,
                 "--slot",
                 "43",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3434,7 +3387,6 @@ class TestConcurrentThreats:
                 test_workspace,
                 "--slot",
                 "44",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3524,7 +3476,6 @@ class TestConcurrentThreats:
                 test_workspace,
                 "--slot",
                 "45",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3607,7 +3558,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "50",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3658,7 +3608,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "51",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3709,7 +3658,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "52",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3760,7 +3708,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "53",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3811,7 +3758,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "54",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
@@ -3862,7 +3808,6 @@ class TestExpandedEnvScanningPatterns:
                 test_workspace,
                 "--slot",
                 "55",
-                "--monitor",
             ],
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,

@@ -2,13 +2,14 @@
 Test for coi run - fixed timezone written to workspace file.
 
 Tests that:
-1. Run with --timezone set to a non-host timezone (Asia/Tokyo)
+1. Run with timezone config set to a non-host timezone (Asia/Tokyo)
 2. Container writes timezone abbreviation to a file in the mounted workspace
 3. Host can read the file back and verify correct timezone (JST)
 """
 
 import os
 import subprocess
+from pathlib import Path
 
 
 def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_dir):
@@ -17,11 +18,24 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
 
     Flow:
     1. Make workspace writable by container's code user (shift mapping)
-    2. Run coi run --timezone Asia/Tokyo to write TZ to workspace file
-    3. Read the file back on the host and verify JST
+    2. Create .coi/config.toml with [timezone] mode="fixed", name="Asia/Tokyo"
+    3. Run coi run to write TZ to workspace file
+    4. Read the file back on the host and verify JST
     """
     # Ensure workspace is writable by container's code user through shift mapping
     os.chmod(workspace_dir, 0o777)
+
+    # Create config with fixed timezone
+    config_dir = Path(workspace_dir) / ".coi"
+    config_dir.mkdir(exist_ok=True)
+    (config_dir / "config.toml").write_text("""
+[timezone]
+mode = "fixed"
+name = "Asia/Tokyo"
+""")
+
+    env = os.environ.copy()
+    env["COI_CONFIG"] = str(config_dir / "config.toml")
 
     result = subprocess.run(
         [
@@ -29,8 +43,6 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
             "run",
             "--workspace",
             workspace_dir,
-            "--timezone",
-            "Asia/Tokyo",
             "--",
             "sh",
             "-c",
@@ -39,6 +51,7 @@ def test_run_timezone_fixed_workspace(coi_binary, cleanup_containers, workspace_
         capture_output=True,
         text=True,
         timeout=180,
+        env=env,
     )
 
     assert result.returncode == 0, f"Write to workspace should succeed. stderr: {result.stderr}"
