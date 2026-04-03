@@ -23,7 +23,7 @@ def test_profile_build_script_relative_resolution(coi_binary, cleanup_containers
     (profile_dir / "config.toml").write_text(
         """
 [build]
-base = "coi"
+base = "coi-default"
 script = "build.sh"
 """
     )
@@ -70,7 +70,7 @@ def test_profile_nonexistent_build_script(coi_binary, cleanup_containers, worksp
 image = "coi-nonexistent-image-xyz"
 
 [build]
-base = "coi"
+base = "coi-default"
 script = "does-not-exist.sh"
 """
     )
@@ -104,10 +104,10 @@ script = "does-not-exist.sh"
         [
             coi_binary,
             "build",
-            "custom",
-            "coi-nonexistent-image-xyz",
-            "--script",
-            str(profile_dir / "does-not-exist.sh"),
+            "--profile",
+            "badscript",
+            "--workspace",
+            workspace_dir,
         ],
         capture_output=True,
         text=True,
@@ -129,7 +129,7 @@ def test_profile_build_commands(coi_binary, cleanup_containers, workspace_dir):
     (profile_dir / "config.toml").write_text(
         """
 [build]
-base = "coi"
+base = "coi-default"
 commands = ["echo hello", "echo world"]
 """
     )

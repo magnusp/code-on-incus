@@ -66,6 +66,33 @@ def restore_dns_config(network_name):
     )
 
 
+def _create_profile(
+    tmp_path, profile_name, image_name, build_script_content, base="images:ubuntu/22.04"
+):
+    """Helper to create a profile directory with config and build script.
+
+    Args:
+        tmp_path: pytest tmp_path fixture
+        profile_name: Name of the profile
+        image_name: Image alias to build
+        build_script_content: Content of the build script
+        base: Base image to use (default: images:ubuntu/22.04)
+
+    Returns:
+        Path to the workspace directory (tmp_path itself)
+    """
+    profile_dir = tmp_path / ".coi" / "profiles" / profile_name
+    profile_dir.mkdir(parents=True, exist_ok=True)
+
+    (profile_dir / "config.toml").write_text(
+        f'image = "{image_name}"\n\n[build]\nbase = "{base}"\nscript = "build.sh"\n'
+    )
+
+    (profile_dir / "build.sh").write_text(build_script_content)
+
+    return tmp_path
+
+
 def test_build_dns_autofix(coi_binary, tmp_path):
     """
     Test that build auto-fixes DNS misconfiguration.
@@ -78,7 +105,7 @@ def test_build_dns_autofix(coi_binary, tmp_path):
     1. Get Incus network name
     2. Break DNS configuration (set 127.0.0.53)
     3. Clean up any existing build container
-    4. Run coi build custom with --base images:ubuntu/22.04
+    4. Run coi build --profile with base images:ubuntu/22.04
     5. Verify build succeeds
     6. Verify DNS auto-fix messages appear in output
     7. Restore DNS configuration
@@ -90,9 +117,11 @@ def test_build_dns_autofix(coi_binary, tmp_path):
 
     image_name = "coi-test-dns-autofix"
 
-    # Create minimal build script that verifies DNS works
-    build_script = tmp_path / "build.sh"
-    build_script.write_text(
+    # Create profile with minimal build script that verifies DNS works
+    workspace = _create_profile(
+        tmp_path,
+        "test-dns-autofix",
+        image_name,
         """#!/bin/bash
 set -e
 echo "Testing DNS resolution..."
@@ -103,7 +132,7 @@ else
     echo "DNS resolution failed!"
     exit 1
 fi
-"""
+""",
     )
 
     try:
@@ -120,21 +149,13 @@ fi
         )
 
         # Build custom image from fresh Ubuntu base (not coi) to trigger DNS fix
-        # Using --base images:ubuntu/22.04 ensures we start with broken DNS
+        # Using base = "images:ubuntu/22.04" in profile ensures we start with broken DNS
         result = subprocess.run(
-            [
-                coi_binary,
-                "build",
-                "custom",
-                image_name,
-                "--base",
-                "images:ubuntu/22.04",
-                "--script",
-                str(build_script),
-            ],
+            [coi_binary, "build", "--profile", "test-dns-autofix"],
             capture_output=True,
             text=True,
             timeout=600,  # Longer timeout for DNS fix + build
+            cwd=str(workspace),
         )
 
         combined_output = result.stdout + result.stderr
@@ -174,7 +195,7 @@ def test_dns_works_in_container_from_fixed_image(coi_binary, tmp_path):
     """
     Test that containers started from a DNS-fixed image have working DNS.
 
-    This verifies that the permanent DNS fix in scripts/build/coi.sh correctly
+    This verifies that the permanent DNS fix in profiles/default/build.sh correctly
     persists static DNS configuration into the built image.
 
     Flow:
@@ -191,12 +212,14 @@ def test_dns_works_in_container_from_fixed_image(coi_binary, tmp_path):
     image_name = "coi-test-dns-persistence"
     container_name = "coi-test-dns-container"
 
-    # Create build script that ALWAYS configures static DNS for persistence
+    # Create profile with build script that ALWAYS configures static DNS for persistence
     # This must be unconditional because the builder's tryFixDNS() may have
     # already fixed DNS temporarily, but we need a permanent fix in the image
     # Also disable cloud-init network to prevent DNS reconfiguration on boot
-    build_script = tmp_path / "build.sh"
-    build_script.write_text(
+    workspace = _create_profile(
+        tmp_path,
+        "test-dns-persistence",
+        image_name,
         """#!/bin/bash
 set -e
 echo "Configuring static DNS for persistence test..."
@@ -229,7 +252,7 @@ DNSEOF
 chattr +i /etc/resolv.conf 2>/dev/null || true
 
 echo "Static DNS configured and protected."
-"""
+""",
     )
 
     try:
@@ -253,19 +276,11 @@ echo "Static DNS configured and protected."
 
         # Build custom image from fresh Ubuntu base
         result = subprocess.run(
-            [
-                coi_binary,
-                "build",
-                "custom",
-                image_name,
-                "--base",
-                "images:ubuntu/22.04",
-                "--script",
-                str(build_script),
-            ],
+            [coi_binary, "build", "--profile", "test-dns-persistence"],
             capture_output=True,
             text=True,
             timeout=600,
+            cwd=str(workspace),
         )
 
         assert result.returncode == 0, (
@@ -341,7 +356,7 @@ def test_build_with_working_dns_no_changes(coi_binary, tmp_path):
 
     Flow:
     1. Ensure DNS is working (restore if needed)
-    2. Run coi build custom
+    2. Run coi build --profile
     3. Verify no DNS modification messages appear
     """
     # Get network name
@@ -352,7 +367,7 @@ def test_build_with_working_dns_no_changes(coi_binary, tmp_path):
 
     # Skip if coi base image doesn't exist
     result = subprocess.run(
-        [coi_binary, "image", "exists", "coi"],
+        [coi_binary, "image", "exists", "coi-default"],
         capture_output=True,
     )
     if result.returncode != 0:
@@ -360,13 +375,16 @@ def test_build_with_working_dns_no_changes(coi_binary, tmp_path):
 
     image_name = "coi-test-dns-nochange"
 
-    # Create minimal build script
-    build_script = tmp_path / "build.sh"
-    build_script.write_text(
+    # Create profile with minimal build script
+    workspace = _create_profile(
+        tmp_path,
+        "test-dns-nochange",
+        image_name,
         """#!/bin/bash
 set -e
 echo "Build with working DNS"
-"""
+""",
+        base="coi-default",
     )
 
     try:
@@ -378,12 +396,13 @@ echo "Build with working DNS"
             check=False,
         )
 
-        # Build custom image
+        # Build custom image via profile
         result = subprocess.run(
-            [coi_binary, "build", "custom", image_name, "--script", str(build_script)],
+            [coi_binary, "build", "--profile", "test-dns-nochange"],
             capture_output=True,
             text=True,
             timeout=300,
+            cwd=str(workspace),
         )
 
         combined_output = result.stdout + result.stderr
@@ -420,7 +439,7 @@ def test_build_dns_autofix_localhost(coi_binary, tmp_path):
     1. Get Incus network name
     2. Break DNS configuration (set 127.0.0.1)
     3. Clean up any existing build container
-    4. Run coi build custom with --base images:ubuntu/22.04
+    4. Run coi build --profile with base images:ubuntu/22.04
     5. Verify build succeeds
     6. Verify DNS auto-fix messages mention localhost DNS
     7. Restore DNS configuration
@@ -432,9 +451,11 @@ def test_build_dns_autofix_localhost(coi_binary, tmp_path):
 
     image_name = "coi-test-dns-localhost"
 
-    # Create minimal build script that verifies DNS works
-    build_script = tmp_path / "build.sh"
-    build_script.write_text(
+    # Create profile with minimal build script that verifies DNS works
+    workspace = _create_profile(
+        tmp_path,
+        "test-dns-localhost",
+        image_name,
         """#!/bin/bash
 set -e
 echo "Testing DNS resolution after localhost DNS fix..."
@@ -445,7 +466,7 @@ else
     echo "DNS resolution failed!"
     exit 1
 fi
-"""
+""",
     )
 
     try:
@@ -463,19 +484,11 @@ fi
 
         # Build custom image from fresh Ubuntu base (not coi) to trigger DNS fix
         result = subprocess.run(
-            [
-                coi_binary,
-                "build",
-                "custom",
-                image_name,
-                "--base",
-                "images:ubuntu/22.04",
-                "--script",
-                str(build_script),
-            ],
+            [coi_binary, "build", "--profile", "test-dns-localhost"],
             capture_output=True,
             text=True,
             timeout=600,  # Longer timeout for DNS fix + build
+            cwd=str(workspace),
         )
 
         combined_output = result.stdout + result.stderr

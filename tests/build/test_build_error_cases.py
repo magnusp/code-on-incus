@@ -2,7 +2,7 @@
 Test error and edge cases for build-from-config.
 
 Tests:
-- [build] with defaults.image = "coi" → falls back to base build (no config build)
+- [build] with defaults.image = "coi-default" → falls back to base build (no config build)
 - [build] with no defaults.image set → falls back to base build
 - [build] with base image that doesn't exist → clear error
 - [build] with empty commands array → falls back to base build
@@ -19,7 +19,7 @@ import pytest
 
 def skip_without_coi(coi_binary):
     result = subprocess.run(
-        [coi_binary, "image", "exists", "coi"],
+        [coi_binary, "image", "exists", "coi-default"],
         capture_output=True,
     )
     if result.returncode != 0:
@@ -28,7 +28,7 @@ def skip_without_coi(coi_binary):
 
 def test_build_config_image_is_coi_falls_back(coi_binary, workspace_dir):
     """
-    [build] with defaults.image = "coi" should NOT trigger config build.
+    [build] with defaults.image = "coi-default" should NOT trigger config build.
     Falls back to building the base coi image.
     """
     config_dir = Path(workspace_dir) / ".coi"
@@ -36,7 +36,7 @@ def test_build_config_image_is_coi_falls_back(coi_binary, workspace_dir):
     (config_dir / "config.toml").write_text(
         """
 [defaults]
-image = "coi"
+image = "coi-default"
 
 [build]
 commands = ["echo should-not-be-used-as-custom-build"]
@@ -55,8 +55,8 @@ commands = ["echo should-not-be-used-as-custom-build"]
     assert result.returncode == 0, f"Should fall back to base build. stderr: {result.stderr}"
     combined = result.stdout + result.stderr
     # Should NOT be treating this as a custom image build
-    assert "custom image 'coi'" not in combined.lower(), (
-        f"Should build base coi image, not custom. Got:\n{combined}"
+    assert "custom image 'coi-default'" not in combined.lower(), (
+        f"Should build base coi-default image, not custom. Got:\n{combined}"
     )
 
 
@@ -121,10 +121,10 @@ commands = ["echo hello"]
     ), f"Should indicate build failure due to missing base. Got:\n{combined}"
 
 
-def test_build_config_empty_commands_falls_back(coi_binary, workspace_dir):
+def test_build_config_empty_commands_errors(coi_binary, workspace_dir):
     """
-    [build] with commands = [] (empty array) → no build config detected,
-    falls back to base coi build.
+    [build] with commands = [] (empty array) → no valid build config,
+    errors because custom image has no build script or commands.
     """
     config_dir = Path(workspace_dir) / ".coi"
     config_dir.mkdir(exist_ok=True)
@@ -146,16 +146,18 @@ commands = []
         cwd=workspace_dir,
     )
 
-    # Empty commands = no build config → fall back to base coi build
-    assert result.returncode == 0, (
-        f"Empty commands should fall back to base build. stderr: {result.stderr}"
+    # Empty commands with custom image name → error (no build config for custom image)
+    assert result.returncode != 0, (
+        f"Empty commands with custom image should error. stdout: {result.stdout}"
     )
+    combined = result.stdout + result.stderr
+    assert "build" in combined.lower(), f"Error should mention build. Got:\n{combined}"
 
 
 def test_build_config_only_base_no_script_or_commands(coi_binary, workspace_dir):
     """
-    [build] with only base= set (no script or commands) → falls back to base build.
-    base= alone is not enough to constitute a build config.
+    [build] with only base= set (no script or commands) → errors.
+    base= alone is not enough to constitute a build config for a custom image.
     """
     config_dir = Path(workspace_dir) / ".coi"
     config_dir.mkdir(exist_ok=True)
@@ -165,7 +167,7 @@ def test_build_config_only_base_no_script_or_commands(coi_binary, workspace_dir)
 image = "coi-test-base-only"
 
 [build]
-base = "coi"
+base = "coi-default"
 """
     )
 
@@ -177,10 +179,12 @@ base = "coi"
         cwd=workspace_dir,
     )
 
-    # base= alone is not build config → fall back to base coi build
-    assert result.returncode == 0, (
-        f"base= alone should fall back to base build. stderr: {result.stderr}"
+    # base= alone with custom image → error (no script or commands to execute)
+    assert result.returncode != 0, (
+        f"base= alone with custom image should error. stdout: {result.stdout}"
     )
+    combined = result.stdout + result.stderr
+    assert "build" in combined.lower(), f"Error should mention build. Got:\n{combined}"
 
 
 def test_build_missing_script_explicit_build(coi_binary, workspace_dir):
@@ -312,7 +316,7 @@ def test_build_no_config_no_build_section(coi_binary, workspace_dir):
     (config_dir / "config.toml").write_text(
         """
 [defaults]
-image = "coi"
+image = "coi-default"
 persistent = true
 """
     )
