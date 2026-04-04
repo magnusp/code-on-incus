@@ -170,10 +170,11 @@ func init() {
 	// Add flags to list command
 	imageListCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all local images, not just COI images")
 	imageListCmd.Flags().String("prefix", "", "Filter images by alias prefix")
-	imageListCmd.Flags().String("format", "table", "Output format: table or json")
+	imageListCmd.Flags().String("format", "text", "Output format: text or json")
 
 	// Add flags to legacy images command
 	imagesCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all local images, not just COI images")
+	imagesCmd.Flags().String("format", "text", "Output format: text or json")
 
 	// Add flags to publish command
 	imagePublishCmd.Flags().String("description", "", "Image description")
@@ -199,6 +200,11 @@ func imageListCommand(cmd *cobra.Command, args []string) error {
 
 	format, _ := cmd.Flags().GetString("format")
 	prefix, _ := cmd.Flags().GetString("prefix")
+
+	// Validate format value
+	if format != "text" && format != "json" {
+		return &ExitCodeError{Code: 2, Message: fmt.Sprintf("invalid format '%s': must be 'text' or 'json'", format)}
+	}
 
 	// If format is JSON, output structured data
 	if format == "json" {
