@@ -20,21 +20,6 @@ var imageCmd = &cobra.Command{
 	Long:  `Operations for listing, publishing, deleting, and managing container images.`,
 }
 
-// Legacy imagesCmd for backwards compatibility (coi images)
-var imagesCmd = &cobra.Command{
-	Use:   "images",
-	Short: "List available Incus images (alias for 'image list')",
-	Long: `List available Incus images for use with --image flag.
-
-Shows both built COI images and available remote images.
-
-Examples:
-  coi images              # List COI images only
-  coi images --all        # List all local images
-`,
-	RunE: imageListCommand,
-}
-
 // imageListCmd lists available images
 var imageListCmd = &cobra.Command{
 	Use:   "list",
@@ -166,15 +151,43 @@ Example:
 	},
 }
 
+// imageInfoCmd shows detailed information about an image
+var imageInfoCmd = &cobra.Command{
+	Use:   "info <alias>",
+	Short: "Show detailed image information",
+	Args:  cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		alias := args[0]
+		format, _ := cmd.Flags().GetString("format")
+
+		// Validate format
+		if format != "text" && format != "json" {
+			return &ExitCodeError{Code: 2, Message: fmt.Sprintf("invalid format '%s': must be 'text' or 'json'", format)}
+		}
+
+		var output string
+		var err error
+
+		if format == "json" {
+			output, err = container.IncusOutput("image", "info", alias, "--format=json")
+		} else {
+			output, err = container.IncusOutput("image", "info", alias)
+		}
+
+		if err != nil {
+			return fmt.Errorf("failed to get image info: %v", err)
+		}
+
+		fmt.Print(output)
+		return nil
+	},
+}
+
 func init() {
 	// Add flags to list command
 	imageListCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all local images, not just COI images")
 	imageListCmd.Flags().String("prefix", "", "Filter images by alias prefix")
 	imageListCmd.Flags().String("format", "text", "Output format: text or json")
-
-	// Add flags to legacy images command
-	imagesCmd.Flags().BoolVarP(&showAll, "all", "a", false, "Show all local images, not just COI images")
-	imagesCmd.Flags().String("format", "text", "Output format: text or json")
 
 	// Add flags to publish command
 	imagePublishCmd.Flags().String("description", "", "Image description")
@@ -184,12 +197,16 @@ func init() {
 	imageCleanupCmd.Flags().Int("keep", 0, "Number of versions to keep (required)")
 	_ = imageCleanupCmd.MarkFlagRequired("keep") // Always succeeds for valid flag names.
 
+	// Add flags to info command
+	imageInfoCmd.Flags().String("format", "text", "Output format: text or json")
+
 	// Add subcommands to image command
 	imageCmd.AddCommand(imageListCmd)
 	imageCmd.AddCommand(imagePublishCmd)
 	imageCmd.AddCommand(imageDeleteCmd)
 	imageCmd.AddCommand(imageExistsCmd)
 	imageCmd.AddCommand(imageCleanupCmd)
+	imageCmd.AddCommand(imageInfoCmd)
 }
 
 func imageListCommand(cmd *cobra.Command, args []string) error {
