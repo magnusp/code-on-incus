@@ -41,6 +41,8 @@
 
 - [Breaking] **Project config moved from `.coi.toml` to `.coi/config.toml`** — Project-level configuration must now be placed in `.coi/config.toml` instead of `.coi.toml` in the project root. This enables co-locating build scripts and other project assets alongside config in the `.coi/` directory. COI will refuse to start if a `.coi.toml` file is detected, displaying a migration command: `mkdir -p .coi && mv .coi.toml .coi/config.toml`. (#251)
 
+- [Breaking] **Dropped `/etc/coi/` and `~/.config/coi/` config locations** — COI now only loads configuration and profiles from `~/.coi/` (user) and `./.coi/` (project). The previous system-wide (`/etc/coi/`) and XDG (`~/.config/coi/`) locations are no longer scanned. Users with config or profiles under `~/.config/coi/` must move them to `~/.coi/`: `mv ~/.config/coi/config.toml ~/.coi/config.toml && mv ~/.config/coi/profiles ~/.coi/profiles`. This simplifies the config hierarchy to a single user location (co-located with sessions/storage/logs) plus project overrides.
+
 ### Bug Fixes
 
 - [Bug Fix] **Health check shows negative free space on fresh Incus storage pool** — On a fresh Incus installation, `coi health` reported nonsensical values like `-249.1 GiB free of 28.6 GiB (972% used)`. The root cause was that Incus reports storage sizes with different unit suffixes depending on magnitude — `space used` can be in MiB on a fresh pool while `total space` is in GiB. The parser used `fmt.Sscanf("%f")` which only extracted the numeric part, ignoring the unit suffix, so `277.69MiB` was treated as `277.69 GiB`. Fixed by adding a `parseStorageValueGiB()` helper that normalises all Incus storage units (KiB, MiB, GiB, TiB, EiB) to GiB before performing arithmetic. Includes unit tests for the parser and an integration test asserting sane values (non-negative free space, 0-100% usage). (#285)
@@ -71,6 +73,7 @@
 - [Improvement] **Add `container info` and `image info` subcommands** — New info subcommands for viewing detailed resource information, wrapping `incus info` and `incus image info` respectively. Both support `--format text|json`.
 - [Improvement] **Remove `coi images` command** — The plural `coi images` shortcut has been removed. Use `coi image list` instead.
 - [Improvement] **Centralize command registration in `root.go`** — `attach`, `shutdown`, and `monitor` commands no longer self-register via `rootCmd.AddCommand()` in their own `init()` functions. All command registration is now centralized in `root.go` for consistency.
+- [Improvement] **Load profiles from `~/.coi/profiles/` and project `.coi/profiles/`** — Profile directories are scanned under `~/.coi/profiles/` (user, co-located with sessions/storage/logs) and `./.coi/profiles/` (project). Profiles from both locations are merged into a single namespace. If the same profile name is defined in both, COI refuses to start and points to both files, asking the user to rename one — this keeps it unambiguous which profile is being applied.
 
 ### Enhancements
 
