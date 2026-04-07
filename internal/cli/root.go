@@ -76,6 +76,12 @@ Examples:
 			persistent = config.BoolVal(cfg.Defaults.Persistent)
 		}
 
+		// Silence usage output for RunE errors. Setting this here (in
+		// PersistentPreRunE) rather than globally means cobra still prints
+		// usage for arg/flag validation errors (which fire before this hook),
+		// but won't dump usage for RunE errors like ExitCodeError.
+		cmd.SilenceUsage = true
+
 		return nil
 	},
 }
