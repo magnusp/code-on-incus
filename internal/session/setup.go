@@ -2,6 +2,7 @@ package session
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -157,16 +158,16 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		return nil, fmt.Errorf("image '%s' not found - run 'coi build' first", image)
 	}
 
-	// 3. Determine execution context
-	// coi image has the claude user pre-configured, so run as that user
-	// Other images don't have this setup, so run as root
-	usingCoiImage := image == CoiImage
-	result.RunAsRoot = !usingCoiImage
-	if result.RunAsRoot {
-		result.HomeDir = "/root"
-	} else {
-		result.HomeDir = "/home/" + container.CodeUser
-	}
+	// 3. Provisional execution context — finalized at step 6.4 once the
+	// container is up and we can probe it for the `code` user.
+	//
+	// Historically this was a literal string match against the coi-default
+	// alias. That breaks custom images built FROM coi-default (they have
+	// the `code` user inherited from the base layer but a different alias,
+	// so the match returned false and the session was forced to root). We
+	// now defer the final decision until after the container boots and
+	// probe it directly.
+	result.HomeDir = "/home/" + container.CodeUser
 
 	// 4. Check if container already exists
 	var skipLaunch bool
@@ -381,11 +382,28 @@ func Setup(opts SetupOptions) (*SetupResult, error) {
 		return nil, err
 	}
 
+	// 6.4. Finalize execution context by probing the container for the
+	// `code` user. This replaces the old literal-alias match, which
+	// forced custom images built FROM coi-default (a valid and common
+	// pattern) to run as root. We now trust the image: if it has a
+	// `code` user, we use it; otherwise we fall back to root.
+	hasCodeUser, err := DetectCodeUser(result.Manager, container.CodeUser)
+	if err != nil {
+		opts.Logger(fmt.Sprintf("Warning: could not probe container for %s user: %v — falling back to root", container.CodeUser, err))
+		hasCodeUser = false
+	}
+	result.RunAsRoot = !hasCodeUser
+	if result.RunAsRoot {
+		result.HomeDir = "/root"
+	} else {
+		result.HomeDir = "/home/" + container.CodeUser
+	}
+
 	// 6.5. Remap container user UID/GID if configured UID differs from image default (1000)
 	// The COI image builds the 'code' user with UID/GID 1000. If code_uid is set to a
 	// different value, remap the user inside the container so /etc/passwd, home directory
 	// ownership, and file permissions all match the configured UID.
-	if !skipLaunch && usingCoiImage && container.CodeUID != 1000 {
+	if !skipLaunch && hasCodeUser && container.CodeUID != 1000 {
 		opts.Logger(fmt.Sprintf("Remapping user %s from UID 1000 to %d...", container.CodeUser, container.CodeUID))
 		remapCmd := fmt.Sprintf(
 			"groupmod -g %d %s && usermod -u %d -g %d %s && chown -R %s:%s /home/%s",
@@ -628,4 +646,36 @@ func waitForReady(mgr *container.Manager, maxRetries int, logger func(string)) e
 	}
 
 	return fmt.Errorf("container failed to become ready after %d seconds", maxRetries)
+}
+
+// DetectCodeUser returns true if the named user account exists inside
+// the running container. It is used to decide whether to run sessions
+// as `code` or fall back to root — replacing the old broken heuristic
+// that matched the image alias literally against "coi-default" and
+// misclassified every custom image built from it as a root image.
+//
+// The probe runs `id -u <user>` via ExecArgsCapture, which passes
+// codeUser as a raw argv entry to `id` rather than interpolating it
+// into a shell string. That is defence-in-depth against a maliciously
+// crafted [incus] code_user value in config.toml: even if a user set
+// `code_user = "code; rm -rf /"`, `id` would just receive that as a
+// single argv and report "no such user" — the shell never sees it.
+//
+// A *container.ExitError (non-zero exit of `id`) is treated as "user
+// not present" and returns (false, nil). Any other error (e.g. incus
+// connectivity failure) is surfaced to the caller so it can decide
+// whether to warn or fall back.
+func DetectCodeUser(mgr *container.Manager, codeUser string) (bool, error) {
+	_, err := mgr.ExecArgsCapture(
+		[]string{"id", "-u", codeUser},
+		container.ExecCommandOptions{Capture: true},
+	)
+	if err == nil {
+		return true, nil
+	}
+	var exitErr *container.ExitError
+	if errors.As(err, &exitErr) {
+		return false, nil
+	}
+	return false, err
 }
