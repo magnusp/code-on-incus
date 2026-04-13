@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/mensfeld/code-on-incus/internal/alias"
 	"github.com/mensfeld/code-on-incus/internal/config"
 	"github.com/mensfeld/code-on-incus/internal/container"
 	"github.com/mensfeld/code-on-incus/internal/limits"
@@ -80,6 +81,12 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Validate and prepare alias if configured
+	effectiveAlias, err := validateAndPrepareAlias(cfg.Container.Alias)
+	if err != nil {
+		return err
+	}
+
 	ensureBridgeTrustedZone()
 
 	fmt.Fprintf(os.Stderr, "Launching container %s from image %s...\n", containerName, img)
@@ -97,8 +104,17 @@ func runCommand(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Set alias metadata on container and register in global registry
+	if err := applyContainerAlias(effectiveAlias, containerName, absWorkspace); err != nil {
+		return err
+	}
+
 	// Cleanup container on exit (only if ephemeral)
 	defer func() {
+		// Clear immutable bits before container deletion (must happen first)
+		logger := func(msg string) { fmt.Fprintf(os.Stderr, "%s\n", msg) }
+		session.RemoveImmutable(containerName, logger)
+
 		if !persistent {
 			fmt.Fprintf(os.Stderr, "Cleaning up container %s...\n", containerName)
 			_ = mgr.Delete(true) // Best effort cleanup
@@ -241,6 +257,15 @@ func runCommand(cmd *cobra.Command, args []string) error {
 					actualPaths := session.GetProtectedPathsForLogging(absWorkspace, protectedPaths)
 					if len(actualPaths) > 0 {
 						fmt.Fprintf(os.Stderr, "Protected paths (mounted read-only): %s\n", strings.Join(actualPaths, ", "))
+					}
+				}
+
+				// Apply host-side immutable attribute for defense-in-depth
+				if cfg.Security.IsHostImmutableEnabled() {
+					logger := func(msg string) { fmt.Fprintf(os.Stderr, "%s\n", msg) }
+					immutablePaths := session.ApplyImmutable(absWorkspace, protectedPaths, containerName, logger)
+					if len(immutablePaths) > 0 {
+						fmt.Fprintf(os.Stderr, "Host-side immutable protection applied: %s\n", strings.Join(immutablePaths, ", "))
 					}
 				}
 			}
@@ -441,6 +466,45 @@ func filterWritableGitHooks(paths []string, cfg *config.Config) []string {
 		}
 	}
 	return filtered
+}
+
+// validateAndPrepareAlias validates the alias from config and returns it.
+// Returns ("", nil) if no alias is configured.
+func validateAndPrepareAlias(aliasStr string) (string, error) {
+	if aliasStr == "" {
+		return "", nil
+	}
+	if err := alias.ValidateAlias(aliasStr); err != nil {
+		return "", fmt.Errorf("invalid alias: %w", err)
+	}
+	return aliasStr, nil
+}
+
+// applyContainerAlias sets the user.coi.alias metadata on the container and
+// registers the alias in the global registry. No-op if alias is empty.
+func applyContainerAlias(effectiveAlias, containerName, absWorkspace string) error {
+	if effectiveAlias == "" {
+		return nil
+	}
+
+	if err := container.IncusExec("config", "set", containerName,
+		fmt.Sprintf("user.coi.alias=%s", effectiveAlias)); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to set alias metadata: %v\n", err)
+	}
+
+	reg, err := alias.Load()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to load alias registry: %v\n", err)
+		return nil
+	}
+	if err := reg.Register(effectiveAlias, absWorkspace, ""); err != nil {
+		return fmt.Errorf("alias conflict: %w", err)
+	}
+	if err := reg.Save(); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: Failed to save alias registry: %v\n", err)
+	}
+
+	return nil
 }
 
 // applyContainerTimezone resolves the timezone and configures it inside the container.

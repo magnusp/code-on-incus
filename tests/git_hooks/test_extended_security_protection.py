@@ -16,6 +16,22 @@ Configuration options:
 import subprocess
 from pathlib import Path
 
+import pytest
+
+
+def _make_workspace_writable(workspace_dir):
+    """Make workspace world-writable so container user (UID 1000) can write.
+
+    In CI, the test runner UID (1001) differs from the container user UID (1000).
+    With shift=true on the Incus disk device, host UIDs map directly — so the
+    container user can only write to files with 'other' write permission.
+    """
+    subprocess.run(
+        ["chmod", "-R", "a+rwX", workspace_dir],
+        check=True,
+        capture_output=True,
+    )
+
 
 class TestGitConfigProtection:
     """Tests for .git/config protection (prevents core.hooksPath bypass)."""
@@ -437,6 +453,9 @@ protected_paths = [".git/hooks"]
         vscode_dir = Path(workspace_dir) / ".vscode"
         vscode_dir.mkdir(parents=True, exist_ok=True)
 
+        # Make workspace writable by container user (CI UID mismatch workaround)
+        _make_workspace_writable(workspace_dir)
+
         # Try to write to .vscode - should succeed since it's not in custom list
         result = subprocess.run(
             [
@@ -481,6 +500,9 @@ disable_protection = true
         # Ensure hooks dir exists
         hooks_dir = Path(workspace_dir) / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
+
+        # Make workspace writable by container user (CI UID mismatch workaround)
+        _make_workspace_writable(workspace_dir)
 
         # Run command - should be able to write to hooks
         result = subprocess.run(
@@ -636,10 +658,14 @@ class TestSymlinkSecurity:
 class TestWritableGitHooksConfigCompat:
     """Tests for [git] writable_hooks config compatibility."""
 
-    def test_writable_git_hooks_config_disables_all_protection(
+    def test_writable_git_hooks_config_makes_hooks_writable(
         self, coi_binary, workspace_dir, cleanup_containers
     ):
-        """Test that writable_hooks config disables all path protection."""
+        """Test that writable_hooks config makes .git/hooks writable.
+
+        Note: writable_hooks = true only removes .git/hooks from protected
+        paths. Other paths (.vscode, .husky, .git/config) remain protected.
+        """
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
 
@@ -651,41 +677,40 @@ class TestWritableGitHooksConfigCompat:
 writable_hooks = true
 """)
 
-        # Create protected paths
+        # Create hooks dir
         hooks_dir = Path(workspace_dir) / ".git" / "hooks"
         hooks_dir.mkdir(parents=True, exist_ok=True)
 
-        vscode_dir = Path(workspace_dir) / ".vscode"
-        vscode_dir.mkdir(parents=True, exist_ok=True)
+        # Make workspace writable by container user (CI UID mismatch workaround)
+        _make_workspace_writable(workspace_dir)
 
-        # Run with writable hooks enabled via config - should disable all protection
+        # Run with writable hooks enabled — only .git/hooks should be writable
         result = subprocess.run(
             [
                 coi_binary,
                 "run",
-                "--workspace",
-                workspace_dir,
                 "--",
-                "sh",
-                "-c",
-                "touch /workspace/.git/hooks/test && touch /workspace/.vscode/test",
+                "touch",
+                "/workspace/.git/hooks/test",
             ],
             capture_output=True,
             text=True,
             timeout=120,
+            cwd=workspace_dir,
         )
 
-        # Should succeed
+        # Should succeed — .git/hooks is writable
         assert result.returncode == 0, f"Command failed: {result.stderr}"
-
-        # Both files should be created
         assert (hooks_dir / "test").exists()
-        assert (vscode_dir / "test").exists()
 
-    def test_config_writable_hooks_disables_all_protection(
+    def test_config_writable_hooks_keeps_other_paths_protected(
         self, coi_binary, workspace_dir, cleanup_containers
     ):
-        """Test that [git] writable_hooks=true disables all protection."""
+        """Test that [git] writable_hooks=true still protects non-hooks paths.
+
+        writable_hooks only removes .git/hooks from the protected list.
+        Other paths like .husky remain read-only.
+        """
         # Create config with writable_hooks
         config_content = """
 [git]
@@ -699,10 +724,7 @@ writable_hooks = true
         # Initialize git repo
         subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
 
-        # Create protected paths
-        hooks_dir = Path(workspace_dir) / ".git" / "hooks"
-        hooks_dir.mkdir(parents=True, exist_ok=True)
-
+        # Create .husky (should still be protected)
         husky_dir = Path(workspace_dir) / ".husky"
         husky_dir.mkdir(parents=True, exist_ok=True)
 
@@ -712,9 +734,8 @@ writable_hooks = true
                 coi_binary,
                 "run",
                 "--",
-                "sh",
-                "-c",
-                "touch /workspace/.git/hooks/test && touch /workspace/.husky/test",
+                "touch",
+                "/workspace/.husky/test",
             ],
             capture_output=True,
             text=True,
@@ -722,9 +743,397 @@ writable_hooks = true
             cwd=workspace_dir,
         )
 
-        # Should succeed
-        assert result.returncode == 0, f"Command failed: {result.stderr}"
+        # Should fail — .husky is still protected despite writable_hooks
+        assert result.returncode != 0
+        combined = result.stdout + result.stderr
+        assert (
+            "read-only" in combined.lower()
+            or "read only" in combined.lower()
+            or "permission denied" in combined.lower()
+        ), f"Expected read-only error, got: {combined}"
 
-        # Both files should be created
-        assert (hooks_dir / "test").exists()
-        assert (husky_dir / "test").exists()
+
+class TestImmutableProtection:
+    """Tests for host-side immutable attribute protection (P0-2a).
+
+    The immutable attribute (FS_IMMUTABLE_FL / chattr +i) is applied on the host
+    before the container starts. This prevents the unshare+umount bypass of
+    read-only bind mounts: even after unmounting the overlay, the underlying
+    inode is immutable and writes fail with EPERM.
+
+    These tests require the coi binary to have CAP_LINUX_IMMUTABLE
+    (granted by: sudo setcap cap_linux_immutable=ep <coi-binary>).
+    Without the capability, immutable protection is not applied and
+    the tests are skipped.
+    """
+
+    @staticmethod
+    def _has_immutable_capability(coi_binary):
+        """Check if the coi binary has CAP_LINUX_IMMUTABLE via getcap."""
+        try:
+            result = subprocess.run(
+                ["getcap", coi_binary],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return "cap_linux_immutable" in result.stdout
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            return False
+
+    def test_unshare_umount_bypass_blocked(self, coi_binary, workspace_dir, cleanup_containers):
+        """Test that unshare+umount cannot bypass protected path protection.
+
+        This is the core P0-2a security test. Without immutable protection,
+        a process with CAP_SYS_ADMIN (root) inside the container can:
+          1. Create a new mount namespace (unshare -m)
+          2. Unmount the read-only bind mount
+          3. Write directly to the underlying file
+
+        With immutable protection, step 3 fails because FS_IMMUTABLE_FL is
+        enforced at the inode level, independent of mount namespace.
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        # Initialize a git repository with a hook file
+        subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+
+        hooks_dir = Path(workspace_dir) / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        pre_commit = hooks_dir / "pre-commit"
+        pre_commit.write_text("#!/bin/sh\necho safe\n")
+
+        # Attempt the unshare+umount attack from inside the container.
+        # sudo unshare -m creates a new mount namespace where we can umount
+        # the read-only overlay, exposing the underlying filesystem.
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.git/hooks 2>/dev/null; "
+                "echo pwned > /workspace/.git/hooks/pre-commit 2>&1 || echo ATTACK_BLOCKED",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # Verify original content is preserved on host
+        content = pre_commit.read_text()
+        assert "safe" in content, (
+            f"Hook file was modified by attack! Content: {content} (see FLAWS.md Finding 1)"
+        )
+        assert "pwned" not in content, (
+            f"Attack bypassed immutable protection! Content: {content} (see FLAWS.md Finding 1)"
+        )
+
+    def test_unshare_umount_file_creation_blocked(
+        self, coi_binary, workspace_dir, cleanup_containers
+    ):
+        """Test that creating new files via unshare+umount is blocked."""
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+
+        hooks_dir = Path(workspace_dir) / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+
+        # Attempt to create a new hook file after umounting the read-only overlay
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.git/hooks 2>/dev/null; "
+                "touch /workspace/.git/hooks/evil-hook 2>&1 || echo CREATION_BLOCKED",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # The evil hook should not exist on host
+        evil_hook = hooks_dir / "evil-hook"
+        assert not evil_hook.exists(), (
+            "New file was created despite immutable protection! (see FLAWS.md Finding 1)"
+        )
+
+    def test_immutable_cleaned_after_session(self, coi_binary, workspace_dir, cleanup_containers):
+        """Test that immutable bits are cleared after the session ends.
+
+        After coi run completes, the workspace files should be writable again
+        on the host. This ensures immutable doesn't interfere with normal
+        developer workflow between sessions.
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+
+        hooks_dir = Path(workspace_dir) / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        pre_commit = hooks_dir / "pre-commit"
+        pre_commit.write_text("#!/bin/sh\necho original\n")
+
+        # Run a simple command (this applies + removes immutable)
+        result = subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "echo",
+                "done",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+        assert result.returncode == 0, f"coi run failed: {result.stderr}"
+
+        # After session ends, files should be writable again on host
+        pre_commit.write_text("#!/bin/sh\necho modified\n")
+        assert "modified" in pre_commit.read_text()
+
+    def test_unshare_umount_git_config_blocked(self, coi_binary, workspace_dir, cleanup_containers):
+        """Test that unshare+umount cannot bypass .git/config protection.
+
+        .git/config is a file-level protected path. An attacker who can
+        modify it can set core.hooksPath to a directory they control,
+        bypassing hooks protection entirely (see FLAWS.md Finding 1).
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+
+        git_config = Path(workspace_dir) / ".git" / "config"
+        original_content = git_config.read_text()
+
+        # Attempt to overwrite .git/config with a malicious hooksPath
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.git/config 2>/dev/null; "
+                "echo '[core]\nhookspath=/tmp/evil' > /workspace/.git/config 2>&1 "
+                "|| echo ATTACK_BLOCKED",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # Verify original content is preserved on host
+        content = git_config.read_text()
+        assert content == original_content, (
+            f".git/config was modified by attack! "
+            f"Expected: {original_content!r}, Got: {content!r} "
+            f"(see FLAWS.md Finding 1)"
+        )
+        assert "hookspath" not in content.lower(), (
+            f"Attack injected core.hooksPath into .git/config! Content: {content} "
+            f"(see FLAWS.md Finding 1)"
+        )
+
+    def test_unshare_umount_husky_blocked(self, coi_binary, workspace_dir, cleanup_containers):
+        """Test that unshare+umount cannot bypass .husky protection.
+
+        .husky is a directory-level protected path. Husky hooks execute
+        automatically on git operations, so an attacker who can write here
+        gains host-side code execution (see FLAWS.md Finding 1).
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        husky_dir = Path(workspace_dir) / ".husky"
+        husky_dir.mkdir(parents=True, exist_ok=True)
+        pre_commit = husky_dir / "pre-commit"
+        pre_commit.write_text("#!/bin/sh\necho safe\n")
+
+        # Attempt the unshare+umount attack on .husky
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.husky 2>/dev/null; "
+                "echo pwned > /workspace/.husky/pre-commit 2>&1 "
+                "|| echo ATTACK_BLOCKED",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # Verify original content is preserved on host
+        content = pre_commit.read_text()
+        assert "safe" in content, (
+            f".husky/pre-commit was modified by attack! Content: {content} (see FLAWS.md Finding 1)"
+        )
+        assert "pwned" not in content, (
+            f"Attack bypassed immutable protection on .husky! Content: {content} "
+            f"(see FLAWS.md Finding 1)"
+        )
+
+    def test_unshare_umount_vscode_blocked(self, coi_binary, workspace_dir, cleanup_containers):
+        """Test that unshare+umount cannot bypass .vscode protection.
+
+        .vscode is a directory-level protected path. tasks.json can
+        auto-execute commands and settings.json can inject shell arguments,
+        so an attacker who can write here gains host-side code execution
+        (see FLAWS.md Finding 1).
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        vscode_dir = Path(workspace_dir) / ".vscode"
+        vscode_dir.mkdir(parents=True, exist_ok=True)
+        tasks_json = vscode_dir / "tasks.json"
+        tasks_json.write_text('{"version": "2.0.0", "tasks": []}\n')
+
+        # Attempt the unshare+umount attack on .vscode
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--workspace",
+                workspace_dir,
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.vscode 2>/dev/null; "
+                "echo '{\"malicious\": true}' > /workspace/.vscode/tasks.json 2>&1 "
+                "|| echo ATTACK_BLOCKED",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+
+        # Verify original content is preserved on host
+        content = tasks_json.read_text()
+        assert "2.0.0" in content, (
+            f".vscode/tasks.json was modified by attack! Content: {content} "
+            f"(see FLAWS.md Finding 1)"
+        )
+        assert "malicious" not in content, (
+            f"Attack bypassed immutable protection on .vscode! Content: {content} "
+            f"(see FLAWS.md Finding 1)"
+        )
+
+    def test_bypass_succeeds_without_immutable(self, coi_binary, workspace_dir, cleanup_containers):
+        """Negative test: unshare+umount SUCCEEDS when immutable is disabled.
+
+        This test proves the attack vector is real and that the immutable
+        attribute is what blocks it. Without this test, the other immutable
+        tests could vacuously pass (e.g. if unshare is broken, or the
+        container lacks CAP_SYS_ADMIN).
+
+        With host_immutable=false, the only protection is the read-only
+        bind mount, which is defeated by unshare+umount.
+        """
+        if not self._has_immutable_capability(coi_binary):
+            pytest.skip(
+                "coi binary lacks CAP_LINUX_IMMUTABLE "
+                "(grant with: sudo setcap cap_linux_immutable=ep <coi-binary>)"
+            )
+
+        # Disable immutable protection via config
+        config_dir = Path(workspace_dir) / ".coi"
+        config_dir.mkdir(exist_ok=True)
+        (config_dir / "config.toml").write_text("[security]\nhost_immutable = false\n")
+
+        # Initialize git repo with a hook file
+        subprocess.run(["git", "init"], cwd=workspace_dir, check=True, capture_output=True)
+        hooks_dir = Path(workspace_dir) / ".git" / "hooks"
+        hooks_dir.mkdir(parents=True, exist_ok=True)
+        pre_commit = hooks_dir / "pre-commit"
+        pre_commit.write_text("#!/bin/sh\necho safe\n")
+
+        # Make workspace writable so the container user can write after umount
+        _make_workspace_writable(workspace_dir)
+
+        # Run the attack with immutable disabled — should succeed
+        subprocess.run(
+            [
+                coi_binary,
+                "run",
+                "--",
+                "sudo",
+                "unshare",
+                "-m",
+                "sh",
+                "-c",
+                "umount /workspace/.git/hooks 2>/dev/null; "
+                "echo pwned > /workspace/.git/hooks/pre-commit",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=120,
+            cwd=workspace_dir,
+        )
+
+        # The attack SHOULD succeed — this validates the test isn't vacuous
+        content = pre_commit.read_text()
+        assert "pwned" in content, (
+            f"Expected attack to succeed with host_immutable=false, "
+            f"but hook was NOT modified. Content: {content}. "
+            f"This means the test is vacuous — the attack vector may not "
+            f"be working, making the immutable protection tests meaningless "
+            f"(see FLAWS.md Finding 1)"
+        )

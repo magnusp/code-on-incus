@@ -7,6 +7,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Go Version](https://img.shields.io/github/go-mod/go-version/mensfeld/code-on-incus)](https://golang.org/)
 [![Latest Release](https://img.shields.io/github/v/release/mensfeld/code-on-incus)](https://github.com/mensfeld/code-on-incus/releases)
+[![Join the chat at https://slack.karafka.io](https://raw.githubusercontent.com/karafka/misc/master/slack.svg)](https://slack.karafka.io)
 
 **Security-Hardened Container Runtime for AI Coding Agents with Real-Time Threat Detection**
 
@@ -264,6 +265,25 @@ coi clean
 coi update
 ```
 
+### Container Aliases
+
+Assign human-friendly names to containers for easy management from any directory:
+
+```toml
+# .coi/config.toml (in your project)
+[container]
+alias = "myproject"
+```
+
+```bash
+coi shell myproject              # Launch session using alias (from any directory)
+coi attach myproject             # Attach to running aliased container
+coi kill myproject --force       # Kill by alias
+coi attach myproject-2           # Attach to slot 2
+```
+
+Aliases are registered in `~/.coi/aliases.json` on first use and stored as `user.coi.alias` metadata on each container.
+
 ### Global Flags
 
 ```bash
@@ -464,7 +484,7 @@ coi shell --persistent        # Keep container between sessions
 coi shell --resume            # Resume previous conversation
 coi attach                    # Reconnect to running container
 coi persist                   # Convert ephemeral session to persistent
-coi resume <name>             # Resume paused/frozen container
+coi unfreeze <name>           # Unfreeze paused/frozen container
 sudo poweroff                 # Properly stop container (inside)
 coi shutdown <name>           # Graceful stop (outside)
 ```
@@ -504,7 +524,7 @@ enabled = true
 
 **Automated response levels:**
 - **INFO/WARNING**: Logged (+ alert for WARNING)
-- **HIGH**: Container **paused** (requires `coi resume` to continue)
+- **HIGH**: Container **paused** (requires `coi unfreeze` to continue)
 - **CRITICAL**: Container **killed immediately**
 
 Audit logs are stored at `~/.coi/audit/<container-name>.jsonl` in JSON Lines format.
@@ -554,3 +574,9 @@ See the [FAQ](https://github.com/mensfeld/code-on-incus/wiki/FAQ) for answers to
 - Security model and prompt injection protection
 - API key security and trust model
 - What is Incus? (vs tmux)
+
+## Getting Help
+
+- **Slack**: [Join the COI community on Slack](https://slack.karafka.io) — ask questions, report issues, share feedback
+- **GitHub Issues**: [Open an issue](https://github.com/mensfeld/code-on-incus/issues) for bug reports and feature requests
+- **Wiki**: Browse the [documentation wiki](https://github.com/mensfeld/code-on-incus/wiki) for guides and reference

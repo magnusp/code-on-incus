@@ -129,6 +129,16 @@ func cleanCommand(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
+	// Clean stale immutable locks (after dry-run check to avoid side effects)
+	{
+		logger := func(msg string) { fmt.Println(msg) }
+		immutableCleaned := session.CleanStaleImmutableLocks(logger)
+		if immutableCleaned > 0 {
+			fmt.Printf("Cleaned %d stale immutable lock(s)\n", immutableCleaned)
+			cleaned += immutableCleaned
+		}
+	}
+
 	if cleaned > 0 {
 		fmt.Printf("\n✓ Cleaned %d item(s)\n", cleaned)
 	} else {

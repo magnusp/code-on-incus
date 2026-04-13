@@ -48,6 +48,7 @@ type ContainerConfig struct {
 	Image       string      `toml:"image"`
 	Persistent  *bool       `toml:"persistent"`
 	StoragePool string      `toml:"storage_pool"`
+	Alias       string      `toml:"alias"`
 	Build       BuildConfig `toml:"build"`
 }
 
@@ -56,6 +57,7 @@ func (c *ContainerConfig) HasContainerConfig() bool {
 	return c.Image != "" ||
 		c.Persistent != nil ||
 		c.StoragePool != "" ||
+		c.Alias != "" ||
 		c.Build.HasBuildConfig()
 }
 
@@ -86,6 +88,11 @@ type SecurityConfig struct {
 	AdditionalProtectedPaths []string `toml:"additional_protected_paths"`
 	// DisableProtection completely disables read-only mounting of protected paths
 	DisableProtection bool `toml:"disable_protection"`
+	// HostImmutable applies the Linux immutable attribute (chattr +i) on protected
+	// paths on the host before starting the container. This prevents the unshare+umount
+	// bypass of read-only bind mounts. Requires CAP_LINUX_IMMUTABLE on the coi binary.
+	// Default: true. Set to false to disable.
+	HostImmutable *bool `toml:"host_immutable"`
 }
 
 // GetEffectiveProtectedPaths returns the combined list of protected paths
@@ -97,6 +104,15 @@ func (s *SecurityConfig) GetEffectiveProtectedPaths() []string {
 	paths = append(paths, s.ProtectedPaths...)
 	paths = append(paths, s.AdditionalProtectedPaths...)
 	return paths
+}
+
+// IsHostImmutableEnabled returns whether host-side immutable protection is enabled.
+// Defaults to true when the field is not explicitly set.
+func (s *SecurityConfig) IsHostImmutableEnabled() bool {
+	if s.HostImmutable == nil {
+		return true
+	}
+	return *s.HostImmutable
 }
 
 // DefaultsConfig contains default settings
@@ -594,6 +610,9 @@ func (c *Config) Merge(other *Config) {
 	if other.Security.DisableProtection {
 		c.Security.DisableProtection = true
 	}
+	if other.Security.HostImmutable != nil {
+		c.Security.HostImmutable = other.Security.HostImmutable
+	}
 
 	// Merge monitoring
 	mergeMonitoring(&c.Monitoring, &other.Monitoring)
@@ -824,6 +843,9 @@ func applyContainerConfig(dst *ContainerConfig, src *ContainerConfig) {
 	if src.StoragePool != "" {
 		dst.StoragePool = src.StoragePool
 	}
+	if src.Alias != "" {
+		dst.Alias = src.Alias
+	}
 	mergeBuildInto(&dst.Build, &src.Build)
 }
 
@@ -926,6 +948,9 @@ func applySecurityConfig(dst *SecurityConfig, src *SecurityConfig) {
 	}
 	if src.DisableProtection {
 		dst.DisableProtection = true
+	}
+	if src.HostImmutable != nil {
+		dst.HostImmutable = src.HostImmutable
 	}
 }
 
@@ -1141,6 +1166,9 @@ func mergeSecurityInto(dst *SecurityConfig, src *SecurityConfig) {
 	}
 	if src.DisableProtection {
 		dst.DisableProtection = true
+	}
+	if src.HostImmutable != nil {
+		dst.HostImmutable = src.HostImmutable
 	}
 }
 
