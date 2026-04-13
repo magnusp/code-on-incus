@@ -202,3 +202,4 @@ jobs:
           if [ "${EXIT_CODE}" -ge "${FAIL_EXIT_CODE}" ]; then
             echo "Failing the build due to findings at or above ${FAIL_LEVEL} severity."
             exit 1
+          fi
